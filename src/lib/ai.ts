@@ -4,24 +4,22 @@ export interface AIResponse {
 }
 
 interface AzureConfig {
-  endpoint: string;
+  endpoint: string; // full URL, e.g. https://resource.services.ai.azure.com/anthropic/v1/messages
   apiKey: string;
-  deployment: string;
+  deployment: string; // model name, e.g. claude-opus-4-6
 }
 
 async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
-  const { endpoint, apiKey, deployment } = config;
-  const url = `${endpoint.replace(/\/$/, '')}/models/chat/completions?api-version=2024-05-01-preview`;
-
   try {
-    const res = await fetch(url, {
+    const res = await fetch(config.endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': apiKey,
+        'api-key': config.apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: deployment,
+        model: config.deployment,
         max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -33,7 +31,7 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
     }
 
     const data = await res.json();
-    return { content: data.choices[0].message.content };
+    return { content: data.content[0].text };
   } catch (e: any) {
     return { content: '', error: e.message ?? 'Network error' };
   }
