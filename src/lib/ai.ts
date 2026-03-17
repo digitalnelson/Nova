@@ -10,27 +10,39 @@ interface AzureConfig {
 }
 
 async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
+  const body = {
+    model: config.deployment,
+    max_tokens: 1500,
+    messages: [{ role: 'user', content: prompt }],
+  };
+  console.log('[AI] endpoint:', config.endpoint);
+  console.log('[AI] deployment:', config.deployment);
+  console.log('[AI] apiKey length:', config.apiKey?.length ?? 0);
   try {
     const res = await fetch(config.endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Ocp-Apim-Subscription-Key': config.apiKey,
+        'api-key': config.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: config.deployment,
-        max_tokens: 1500,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      body: JSON.stringify(body),
     });
 
+    const rawText = await res.text();
+    console.log('[AI] status:', res.status);
+    console.log('[AI] response:', rawText);
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return { content: '', error: (err as any).error?.message ?? `API error ${res.status}` };
+      let errMsg = `API error ${res.status}`;
+      try {
+        const err = JSON.parse(rawText);
+        errMsg = err?.error?.message ?? err?.message ?? rawText;
+      } catch {}
+      return { content: '', error: errMsg };
     }
 
-    const data = await res.json();
+    const data = JSON.parse(rawText);
     return { content: data.content[0].text };
   } catch (e: any) {
     return { content: '', error: e.message ?? 'Network error' };
