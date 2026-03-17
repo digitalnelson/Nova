@@ -29,10 +29,10 @@
       "favicon": "./assets/favicon.png"
     },
     "updates": {
-      "url": "https://u.expo.dev/nova"
+      "url": "https://u.expo.dev/REPLACE_WITH_PROJECT_ID"
     },
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "sdkVersion"
     },
     "plugins": [
       "expo-router"
