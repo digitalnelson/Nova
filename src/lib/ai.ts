@@ -34,11 +34,7 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
     console.log('[AI] response:', rawText);
 
     if (!res.ok) {
-      let errMsg = `API error ${res.status}`;
-      try {
-        const err = JSON.parse(rawText);
-        errMsg = err?.error?.message ?? err?.message ?? rawText;
-      } catch {}
+      let errMsg = `HTTP ${res.status} | key_len=${config.apiKey?.length ?? 0} | ${rawText.slice(0, 300)}`;
       return { content: '', error: errMsg };
     }
 
