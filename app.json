@@ -29,7 +29,7 @@
       "favicon": "./assets/favicon.png"
     },
     "updates": {
-      "url": "https://u.expo.dev/REPLACE_WITH_PROJECT_ID"
+      "url": "https://u.expo.dev/6a1a260a-d832-47c9-bcf7-52cbef213b47"
     },
     "runtimeVersion": {
       "policy": "sdkVersion"
