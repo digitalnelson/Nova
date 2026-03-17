@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,8 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../src/constants/colors';
 import { AppSettings } from '../../src/lib/types';
 import { getSettings, saveSettings } from '../../src/lib/storage';
+import { generateOutline, AIDebugInfo } from '../../src/lib/ai';
+import AIDebugModal from '../../src/components/AIDebugModal';
 
 interface SettingRowProps {
   label: string;
@@ -103,6 +106,8 @@ export default function SettingsScreen() {
     wordpressAppPassword: '',
   });
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testModal, setTestModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -120,8 +125,35 @@ export default function SettingsScreen() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleTestConnection = async () => {
+    if (!settings.azureEndpoint || !settings.azureApiKey) {
+      Alert.alert('Missing Config', 'Enter an endpoint URL and API key first.');
+      return;
+    }
+    setTesting(true);
+    const config = {
+      endpoint: settings.azureEndpoint,
+      apiKey: settings.azureApiKey,
+      deployment: settings.azureDeployment || 'claude-opus-4-6',
+    };
+    const res = await generateOutline(config, 'Connection test', '');
+    setTesting(false);
+    if (res.error) {
+      setTestModal({ error: res.error, debugInfo: res.debugInfo });
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Connection OK', 'Successfully connected to Azure AI Foundry.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <AIDebugModal
+        visible={!!testModal}
+        error={testModal?.error ?? ''}
+        debugInfo={testModal?.debugInfo}
+        onClose={() => setTestModal(null)}
+      />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -163,12 +195,25 @@ export default function SettingsScreen() {
             placeholder="claude-opus-4-6"
             hint="The model deployment name in your Azure AI Foundry project"
           />
-          <Pressable
-            style={styles.linkBtn}
-            onPress={() => Linking.openURL('https://ai.azure.com')}
-          >
-            <Text style={styles.linkText}>Open Azure AI Foundry →</Text>
-          </Pressable>
+          <View style={styles.testRow}>
+            <Pressable
+              style={[styles.testBtn, testing && styles.testBtnDisabled]}
+              onPress={handleTestConnection}
+              disabled={testing}
+            >
+              {testing ? (
+                <ActivityIndicator size="small" color={Colors.accentBright} />
+              ) : (
+                <Text style={styles.testBtnText}>Test Connection</Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.linkBtn}
+              onPress={() => Linking.openURL('https://ai.azure.com')}
+            >
+              <Text style={styles.linkText}>Open Azure AI Foundry →</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* WordPress Section */}
@@ -279,6 +324,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,
+  },
+  testRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  testBtn: {
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    minWidth: 130,
+    alignItems: 'center',
+  },
+  testBtnDisabled: {
+    opacity: 0.5,
+  },
+  testBtnText: {
+    color: Colors.accentBright,
+    fontSize: 13,
+    fontWeight: '600',
   },
   linkBtn: {
     alignSelf: 'flex-start',
