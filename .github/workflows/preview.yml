@@ -40,6 +40,8 @@ jobs:
           eas update \
             --channel preview \
             --message "$(git log -1 --pretty=%s)" \
+            --platform ios \
             --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_OFFLINE: "1"
