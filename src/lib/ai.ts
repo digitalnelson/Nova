@@ -15,7 +15,7 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': config.apiKey,
+        'Ocp-Apim-Subscription-Key': config.apiKey,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
