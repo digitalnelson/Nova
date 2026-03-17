@@ -19,7 +19,9 @@ export interface ArticleIdea {
 }
 
 export interface AppSettings {
-  anthropicApiKey: string;
+  azureEndpoint: string;
+  azureApiKey: string;
+  azureDeployment: string;
   wordpressUrl: string;
   wordpressUsername: string;
   wordpressAppPassword: string;

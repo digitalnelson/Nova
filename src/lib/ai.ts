@@ -1,23 +1,27 @@
-const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-opus-4-6';
-
 export interface AIResponse {
   content: string;
   error?: string;
 }
 
-async function callClaude(apiKey: string, prompt: string): Promise<AIResponse> {
+interface AzureConfig {
+  endpoint: string;
+  apiKey: string;
+  deployment: string;
+}
+
+async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
+  const { endpoint, apiKey, deployment } = config;
+  const url = `${endpoint.replace(/\/$/, '')}/models/chat/completions?api-version=2024-05-01-preview`;
+
   try {
-    const res = await fetch(ANTHROPIC_API, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true',
+        'api-key': apiKey,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: deployment,
         max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -29,14 +33,14 @@ async function callClaude(apiKey: string, prompt: string): Promise<AIResponse> {
     }
 
     const data = await res.json();
-    return { content: data.content[0].text };
+    return { content: data.choices[0].message.content };
   } catch (e: any) {
     return { content: '', error: e.message ?? 'Network error' };
   }
 }
 
 export async function generateOutline(
-  apiKey: string,
+  config: AzureConfig,
   title: string,
   notes: string
 ): Promise<AIResponse> {
@@ -52,11 +56,11 @@ Generate a detailed article outline with:
 - A conclusion note
 
 Format it cleanly with markdown. Be specific and actionable.`;
-  return callClaude(apiKey, prompt);
+  return callClaude(config, prompt);
 }
 
 export async function improveTitles(
-  apiKey: string,
+  config: AzureConfig,
   title: string,
   notes: string
 ): Promise<AIResponse> {
@@ -72,11 +76,11 @@ Suggest 5 improved article titles. Make them:
 - Varied in style (list, how-to, question, statement, bold claim)
 
 Return just the 5 titles, numbered. No explanations.`;
-  return callClaude(apiKey, prompt);
+  return callClaude(config, prompt);
 }
 
 export async function suggestTags(
-  apiKey: string,
+  config: AzureConfig,
   title: string,
   notes: string
 ): Promise<AIResponse> {
@@ -87,11 +91,11 @@ ${notes ? `Notes: ${notes}` : ''}
 
 Suggest 6-8 relevant tags/categories. Consider topic, audience, content type, and industry.
 Return only a comma-separated list of short tags (1-3 words each). No explanations.`;
-  return callClaude(apiKey, prompt);
+  return callClaude(config, prompt);
 }
 
 export async function writeIntro(
-  apiKey: string,
+  config: AzureConfig,
   title: string,
   notes: string
 ): Promise<AIResponse> {
@@ -106,5 +110,5 @@ Write a compelling 2-3 paragraph introduction that:
 - Previews what they'll learn
 
 Keep it engaging and conversational but professional. About 150-200 words.`;
-  return callClaude(apiKey, prompt);
+  return callClaude(config, prompt);
 }

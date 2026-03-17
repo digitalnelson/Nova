@@ -35,7 +35,7 @@ export default function IdeaDetailScreen() {
   const [showAI, setShowAI] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [azureConfig, setAzureConfig] = useState({ endpoint: '', apiKey: '', deployment: '' });
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
@@ -50,7 +50,11 @@ export default function IdeaDetailScreen() {
       setStatus(found.status);
     }
     const settings = await getSettings();
-    setApiKey(settings.anthropicApiKey);
+    setAzureConfig({
+      endpoint: settings.azureEndpoint,
+      apiKey: settings.azureApiKey,
+      deployment: settings.azureDeployment,
+    });
   }, [id]);
 
   useEffect(() => {
@@ -237,7 +241,7 @@ export default function IdeaDetailScreen() {
           <AIPanel
             title={title}
             notes={notes}
-            apiKey={apiKey}
+            azureConfig={azureConfig}
             onTagsGenerated={handleAITagsGenerated}
           />
         </View>
@@ -286,7 +290,7 @@ export default function IdeaDetailScreen() {
               <AIPanel
                 title={title}
                 notes={notes}
-                apiKey={apiKey}
+                azureConfig={azureConfig}
                 onTagsGenerated={handleAITagsGenerated}
               />
             </View>

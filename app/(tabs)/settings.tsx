@@ -95,7 +95,9 @@ const rowStyles = StyleSheet.create({
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>({
-    anthropicApiKey: '',
+    azureEndpoint: '',
+    azureApiKey: '',
+    azureDeployment: 'claude-opus-4-6',
     wordpressUrl: '',
     wordpressUsername: '',
     wordpressAppPassword: '',
@@ -134,24 +136,38 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionIcon}>⚡</Text>
-            <Text style={styles.sectionTitle}>AI — Anthropic</Text>
+            <Text style={styles.sectionTitle}>AI — Azure AI Foundry</Text>
           </View>
           <Text style={styles.sectionDesc}>
-            Nova uses Claude to help you develop article ideas. Your API key is stored locally on your device.
+            Nova uses Claude via Azure AI Foundry. Your credentials are stored locally on your device.
           </Text>
           <SettingRow
+            label="Endpoint URL"
+            value={settings.azureEndpoint}
+            onChangeText={update('azureEndpoint')}
+            placeholder="https://<resource>.services.ai.azure.com"
+            hint="Found in Azure AI Foundry → your project → Overview"
+          />
+          <SettingRow
             label="API Key"
-            value={settings.anthropicApiKey}
-            onChangeText={update('anthropicApiKey')}
-            placeholder="sk-ant-..."
+            value={settings.azureApiKey}
+            onChangeText={update('azureApiKey')}
+            placeholder="Your Azure AI Foundry API key"
             secure
-            hint="Get your API key at console.anthropic.com"
+            hint="Found in Azure AI Foundry → your project → Keys and Endpoints"
+          />
+          <SettingRow
+            label="Deployment Name"
+            value={settings.azureDeployment}
+            onChangeText={update('azureDeployment')}
+            placeholder="claude-opus-4-6"
+            hint="The model deployment name in your Azure AI Foundry project"
           />
           <Pressable
             style={styles.linkBtn}
-            onPress={() => Linking.openURL('https://console.anthropic.com')}
+            onPress={() => Linking.openURL('https://ai.azure.com')}
           >
-            <Text style={styles.linkText}>Get an API key →</Text>
+            <Text style={styles.linkText}>Open Azure AI Foundry →</Text>
           </Pressable>
         </View>
 

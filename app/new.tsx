@@ -40,7 +40,7 @@ export default function NewIdeaScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [saving, setSaving] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [azureConfig, setAzureConfig] = useState({ endpoint: '', apiKey: '', deployment: '' });
 
   // AI state
   const [loadingAction, setLoadingAction] = useState<AIAction | null>(null);
@@ -51,7 +51,11 @@ export default function NewIdeaScreen() {
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 300);
-    getSettings().then((s) => setApiKey(s.anthropicApiKey));
+    getSettings().then((s) => setAzureConfig({
+      endpoint: s.azureEndpoint,
+      apiKey: s.azureApiKey,
+      deployment: s.azureDeployment,
+    }));
   }, []);
 
   const addTag = (raw: string) => {
@@ -61,8 +65,8 @@ export default function NewIdeaScreen() {
   };
 
   const runAI = async (action: AIAction) => {
-    if (!apiKey) {
-      Alert.alert('API Key Required', 'Add your Anthropic API key in Settings to use AI features.');
+    if (!azureConfig.endpoint || !azureConfig.apiKey) {
+      Alert.alert('Azure Configuration Required', 'Add your Azure AI Foundry endpoint and API key in Settings.');
       return;
     }
     if (!title.trim()) {
@@ -76,10 +80,10 @@ export default function NewIdeaScreen() {
 
     let res;
     switch (action) {
-      case 'outline': res = await generateOutline(apiKey, title, notes); break;
-      case 'titles':  res = await improveTitles(apiKey, title, notes);   break;
-      case 'tags':    res = await suggestTags(apiKey, title, notes);     break;
-      case 'intro':   res = await writeIntro(apiKey, title, notes);      break;
+      case 'outline': res = await generateOutline(azureConfig, title, notes); break;
+      case 'titles':  res = await improveTitles(azureConfig, title, notes);   break;
+      case 'tags':    res = await suggestTags(azureConfig, title, notes);     break;
+      case 'intro':   res = await writeIntro(azureConfig, title, notes);      break;
     }
 
     setLoadingAction(null);
@@ -212,8 +216,8 @@ export default function NewIdeaScreen() {
             <View style={styles.aiSectionHeader}>
               <Text style={styles.aiSectionIcon}>⚡</Text>
               <Text style={styles.aiSectionLabel}>AI</Text>
-              {!apiKey && (
-                <Text style={styles.aiKeyHint}>  Add API key in Settings</Text>
+              {(!azureConfig.endpoint || !azureConfig.apiKey) && (
+                <Text style={styles.aiKeyHint}>  Configure Azure in Settings</Text>
               )}
             </View>
             <View style={styles.aiActionsRow}>

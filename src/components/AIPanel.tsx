@@ -19,6 +19,12 @@ import {
   writeIntro,
 } from '../lib/ai';
 
+interface AzureConfig {
+  endpoint: string;
+  apiKey: string;
+  deployment: string;
+}
+
 interface AIActionItem {
   action: AIAction;
   icon: string;
@@ -56,21 +62,21 @@ const AI_ACTIONS: AIActionItem[] = [
 interface AIPanelProps {
   title: string;
   notes: string;
-  apiKey: string;
+  azureConfig: AzureConfig;
   onTagsGenerated?: (tags: string[]) => void;
 }
 
-export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPanelProps) {
+export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: AIPanelProps) {
   const [activeAction, setActiveAction] = useState<AIAction | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string>('');
   const [resultAction, setResultAction] = useState<AIAction | null>(null);
 
   const runAction = async (action: AIAction) => {
-    if (!apiKey) {
+    if (!azureConfig.endpoint || !azureConfig.apiKey) {
       Alert.alert(
-        'API Key Required',
-        'Add your Anthropic API key in Settings to use AI features.',
+        'Azure Configuration Required',
+        'Add your Azure AI Foundry endpoint and API key in Settings to use AI features.',
         [{ text: 'OK' }]
       );
       return;
@@ -88,16 +94,16 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
     let res;
     switch (action) {
       case 'outline':
-        res = await generateOutline(apiKey, title, notes);
+        res = await generateOutline(azureConfig, title, notes);
         break;
       case 'titles':
-        res = await improveTitles(apiKey, title, notes);
+        res = await improveTitles(azureConfig, title, notes);
         break;
       case 'tags':
-        res = await suggestTags(apiKey, title, notes);
+        res = await suggestTags(azureConfig, title, notes);
         break;
       case 'intro':
-        res = await writeIntro(apiKey, title, notes);
+        res = await writeIntro(azureConfig, title, notes);
         break;
     }
 
