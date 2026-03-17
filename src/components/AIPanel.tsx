@@ -17,7 +17,9 @@ import {
   improveTitles,
   suggestTags,
   writeIntro,
+  AIDebugInfo,
 } from '../lib/ai';
+import AIDebugModal from './AIDebugModal';
 
 interface AzureConfig {
   endpoint: string;
@@ -71,6 +73,7 @@ export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string>('');
   const [resultAction, setResultAction] = useState<AIAction | null>(null);
+  const [errorModal, setErrorModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   const runAction = async (action: AIAction) => {
     if (!azureConfig.endpoint || !azureConfig.apiKey) {
@@ -110,7 +113,7 @@ export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: 
     setLoading(false);
 
     if (res.error) {
-      Alert.alert('AI Error', res.error);
+      setErrorModal({ error: res.error, debugInfo: res.debugInfo });
       setActiveAction(null);
       return;
     }
@@ -132,6 +135,12 @@ export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: 
 
   return (
     <View style={styles.container}>
+      <AIDebugModal
+        visible={!!errorModal}
+        error={errorModal?.error ?? ''}
+        debugInfo={errorModal?.debugInfo}
+        onClose={() => setErrorModal(null)}
+      />
       {/* Header */}
       <LinearGradient
         colors={[Colors.accentSoft, 'transparent']}

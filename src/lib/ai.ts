@@ -1,6 +1,16 @@
+export interface AIDebugInfo {
+  endpoint: string;
+  deployment: string;
+  keyLength: number;
+  status: number;
+  requestBody: object;
+  rawResponse: string;
+}
+
 export interface AIResponse {
   content: string;
   error?: string;
+  debugInfo?: AIDebugInfo;
 }
 
 interface AzureConfig {
@@ -10,14 +20,15 @@ interface AzureConfig {
 }
 
 async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
-  const body = {
+  const requestBody = {
     model: config.deployment,
     max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   };
+  const keyLength = config.apiKey?.length ?? 0;
   console.log('[AI] endpoint:', config.endpoint);
   console.log('[AI] deployment:', config.deployment);
-  console.log('[AI] apiKey length:', config.apiKey?.length ?? 0);
+  console.log('[AI] apiKey length:', keyLength);
   try {
     const res = await fetch(config.endpoint, {
       method: 'POST',
@@ -26,22 +37,41 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
         'api-key': config.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
     });
 
     const rawText = await res.text();
     console.log('[AI] status:', res.status);
     console.log('[AI] response:', rawText);
 
+    const debugInfo: AIDebugInfo = {
+      endpoint: config.endpoint,
+      deployment: config.deployment,
+      keyLength,
+      status: res.status,
+      requestBody,
+      rawResponse: rawText,
+    };
+
     if (!res.ok) {
-      let errMsg = `HTTP ${res.status} | key_len=${config.apiKey?.length ?? 0} | ${rawText.slice(0, 300)}`;
-      return { content: '', error: errMsg };
+      return { content: '', error: `HTTP ${res.status}`, debugInfo };
     }
 
     const data = JSON.parse(rawText);
     return { content: data.content[0].text };
   } catch (e: any) {
-    return { content: '', error: e.message ?? 'Network error' };
+    return {
+      content: '',
+      error: e.message ?? 'Network error',
+      debugInfo: {
+        endpoint: config.endpoint,
+        deployment: config.deployment,
+        keyLength,
+        status: 0,
+        requestBody,
+        rawResponse: e.message ?? '',
+      },
+    };
   }
 }
 

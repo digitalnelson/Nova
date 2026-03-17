@@ -18,8 +18,9 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../src/constants/colors';
 import { saveIdea, getSettings } from '../src/lib/storage';
 import { ArticleIdea, AIContent } from '../src/lib/types';
-import { generateOutline, improveTitles, suggestTags, writeIntro } from '../src/lib/ai';
+import { generateOutline, improveTitles, suggestTags, writeIntro, AIDebugInfo } from '../src/lib/ai';
 import TagPill from '../src/components/TagPill';
+import AIDebugModal from '../src/components/AIDebugModal';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -46,6 +47,7 @@ export default function NewIdeaScreen() {
   const [loadingAction, setLoadingAction] = useState<AIAction | null>(null);
   const [aiResults, setAiResults] = useState<Partial<Record<AIAction, string>>>({});
   const [expandedResult, setExpandedResult] = useState<AIAction | null>(null);
+  const [errorModal, setErrorModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   const titleRef = useRef<TextInput>(null);
 
@@ -89,7 +91,7 @@ export default function NewIdeaScreen() {
     setLoadingAction(null);
 
     if (res.error) {
-      Alert.alert('AI Error', res.error);
+      setErrorModal({ error: res.error, debugInfo: res.debugInfo });
       return;
     }
 
@@ -158,6 +160,12 @@ export default function NewIdeaScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <AIDebugModal
+        visible={!!errorModal}
+        error={errorModal?.error ?? ''}
+        debugInfo={errorModal?.debugInfo}
+        onClose={() => setErrorModal(null)}
+      />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         {/* Nav bar */}
         <View style={styles.navBar}>
