@@ -30,38 +30,51 @@ function formatDate(isoString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function estimateReadTime(idea: ArticleIdea): string {
+  const text = [
+    idea.title,
+    idea.notes,
+    idea.aiContent?.outline ?? '',
+    idea.aiContent?.intro ?? '',
+  ].join(' ');
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  return `${mins} min read`;
+}
+
+interface AIChip {
+  label: string;
+}
+
+function getAIChips(idea: ArticleIdea): AIChip[] {
+  const chips: AIChip[] = [];
+  if (idea.aiContent?.outline) chips.push({ label: 'Outline' });
+  if (idea.aiContent?.intro) chips.push({ label: 'Intro' });
+  if (idea.aiContent?.improvedTitles?.length) {
+    chips.push({ label: `${idea.aiContent.improvedTitles.length} titles` });
+  }
+  if (idea.aiContent?.suggestedTags?.length) chips.push({ label: 'Tags' });
+  return chips;
+}
+
 export default function IdeaCard({ idea, onPress, onLongPress }: IdeaCardProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const { width } = useWindowDimensions();
   const isTablet = width >= 600;
 
   const onPressIn = () => {
-    Animated.spring(scale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 20,
-    }).start();
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, tension: 300, friction: 20 }).start();
   };
-
   const onPressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 20,
-    }).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 20 }).start();
   };
-
-  const hasAI = !!(
-    idea.aiContent?.outline ||
-    idea.aiContent?.intro ||
-    idea.aiContent?.improvedTitles?.length
-  );
 
   const statusColor = StatusColors[idea.status] ?? Colors.statusDraft;
+  const aiChips = getAIChips(idea);
+  const hasAI = aiChips.length > 0;
   const visibleTags = idea.tags.slice(0, isTablet ? 4 : 3);
   const extraTags = idea.tags.length - visibleTags.length;
+  const readTime = estimateReadTime(idea);
 
   return (
     <Animated.View style={[styles.wrapper, { transform: [{ scale }] }]}>
@@ -72,27 +85,30 @@ export default function IdeaCard({ idea, onPress, onLongPress }: IdeaCardProps) 
         onPressIn={onPressIn}
         onPressOut={onPressOut}
       >
-        {/* Status bar on left edge */}
-        <View style={[styles.statusBar, { backgroundColor: statusColor }]} />
+        {/* Colored top border — status accent */}
+        <View style={[styles.topAccent, { backgroundColor: statusColor }]} />
 
         <View style={styles.content}>
-          {/* Top row: title + AI badge */}
-          <View style={styles.topRow}>
-            <Text style={styles.title} numberOfLines={2}>
-              {idea.title}
-            </Text>
-            {hasAI && (
-              <View style={styles.aiBadge}>
-                <Text style={styles.aiBadgeText}>⚡</Text>
-              </View>
-            )}
-          </View>
+          {/* Title */}
+          <Text style={styles.title} numberOfLines={2}>
+            {idea.title}
+          </Text>
 
           {/* Notes preview */}
           {!!idea.notes && (
             <Text style={styles.notes} numberOfLines={2}>
               {idea.notes}
             </Text>
+          )}
+
+          {/* AI content row — what has been generated */}
+          {hasAI && (
+            <View style={styles.aiRow}>
+              <Text style={styles.aiRowIcon}>⚡</Text>
+              <Text style={styles.aiRowText}>
+                {aiChips.map((c) => c.label).join('  ·  ')}
+              </Text>
+            </View>
           )}
 
           {/* Tags */}
@@ -107,7 +123,7 @@ export default function IdeaCard({ idea, onPress, onLongPress }: IdeaCardProps) 
             </View>
           )}
 
-          {/* Footer: status + date */}
+          {/* Footer */}
           <View style={styles.footer}>
             <View style={[styles.statusPill, { borderColor: statusColor }]}>
               <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -115,7 +131,11 @@ export default function IdeaCard({ idea, onPress, onLongPress }: IdeaCardProps) 
                 {StatusLabels[idea.status]}
               </Text>
             </View>
-            <Text style={styles.date}>{formatDate(idea.updatedAt)}</Text>
+            <View style={styles.footerRight}>
+              <Text style={styles.readTime}>{readTime}</Text>
+              <Text style={styles.dot}>·</Text>
+              <Text style={styles.date}>{formatDate(idea.updatedAt)}</Text>
+            </View>
           </View>
         </View>
       </Pressable>
@@ -132,56 +152,53 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.border,
-    flexDirection: 'row',
     overflow: 'hidden',
   },
-  statusBar: {
-    width: 3,
-    borderRadius: 2,
-    margin: 12,
-    marginRight: 0,
-    borderTopLeftRadius: 2,
-    borderBottomLeftRadius: 2,
-    minHeight: 40,
+  topAccent: {
+    height: 3,
   },
   content: {
-    flex: 1,
     padding: 14,
-    paddingLeft: 12,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
   },
   title: {
-    flex: 1,
     color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 22,
-  },
-  aiBadge: {
-    backgroundColor: Colors.accentSoft,
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    marginTop: 1,
-  },
-  aiBadgeText: {
-    fontSize: 12,
+    fontSize: 17,
+    fontWeight: '700',
+    lineHeight: 23,
+    letterSpacing: -0.2,
+    marginBottom: 6,
   },
   notes: {
     color: Colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 5,
+    marginBottom: 10,
+  },
+  // AI content strip
+  aiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  aiRowIcon: {
+    fontSize: 12,
+  },
+  aiRowText: {
+    color: Colors.accentBright,
+    fontSize: 12,
+    fontWeight: '500',
   },
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 10,
+    marginBottom: 12,
   },
   moreTags: {
     color: Colors.textMuted,
@@ -193,7 +210,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 12,
   },
   statusPill: {
     flexDirection: 'row',
@@ -213,6 +229,19 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  readTime: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
+  dot: {
+    color: Colors.textMuted,
+    fontSize: 12,
   },
   date: {
     color: Colors.textMuted,
