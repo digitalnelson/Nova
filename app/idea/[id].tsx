@@ -231,7 +231,7 @@ export default function IdeaDetailScreen() {
 
   const editor = useEditorBridge({
     autofocus: false,
-    dynamicHeight: true,
+    dynamicHeight: false,
     theme: TOOLBAR_THEME,
     onChange: () => {
       setIsDirty(true);
@@ -872,7 +872,7 @@ const styles = StyleSheet.create({
   },
   editorWebview: {
     backgroundColor: Colors.bg,
-    minHeight: 280,
+    height: 320,
   },
   // Meta sections wrapper
   metaSections: {
