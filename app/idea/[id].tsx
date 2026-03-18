@@ -8,6 +8,8 @@ import {
   ScrollView,
   Alert,
   useWindowDimensions,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -215,6 +217,8 @@ export default function IdeaDetailScreen() {
   const [imageConfig, setImageConfig] = useState({ endpoint: '', apiKey: '', deployment: 'dall-e-3' });
   const [heroImageDataUri, setHeroImageDataUri] = useState<string | undefined>(undefined);
   const [htmlContent, setHtmlContent] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const cssInjected = useRef(false);
   const contentSetInEditor = useRef(false);
   const { width } = useWindowDimensions();
@@ -224,6 +228,21 @@ export default function IdeaDetailScreen() {
   useEffect(() => {
     initLogger();
     log.info('Screen mounted, id:', id);
+  }, []);
+
+  // Track keyboard visibility so we can show a dismiss button and adjust scroll padding
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
   const editor = useEditorBridge({
@@ -601,7 +620,10 @@ export default function IdeaDetailScreen() {
   const mainContent = (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={[
+        styles.scrollContent,
+        keyboardVisible && { paddingBottom: keyboardHeight + 56 },
+      ]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -638,6 +660,11 @@ export default function IdeaDetailScreen() {
           <Text style={styles.backText}>‹ Back</Text>
         </Pressable>
         <View style={styles.navRight}>
+          {keyboardVisible && (
+            <Pressable style={styles.keyboardDismissBtn} onPress={() => Keyboard.dismiss()}>
+              <Text style={styles.keyboardDismissText}>Done</Text>
+            </Pressable>
+          )}
           {isDirty && (
             <Pressable style={styles.saveBtn} onPress={handleSave}>
               <LinearGradient
@@ -1007,6 +1034,16 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     fontSize: 15,
     fontWeight: '600',
+  },
+  // Keyboard dismiss button
+  keyboardDismissBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  keyboardDismissText: {
+    color: Colors.accent,
+    fontSize: 16,
+    fontWeight: '500',
   },
   // Tablet layout
   tabletRow: {
