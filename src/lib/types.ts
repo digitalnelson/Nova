@@ -7,6 +7,14 @@ export interface AIContent {
   suggestedTags?: string[];
 }
 
+export interface Revision {
+  id: string;
+  timestamp: string; // ISO string
+  source: 'user' | 'ai';
+  label: string; // e.g. 'Auto-save', 'Saved', 'Before: Improve Writing'
+  content: string; // full HTML snapshot
+}
+
 export interface ArticleIdea {
   id: string;
   title: string;
@@ -16,6 +24,7 @@ export interface ArticleIdea {
   tags: string[];
   status: IdeaStatus;
   aiContent?: AIContent;
+  revisions?: Revision[]; // capped at MAX_REVISIONS
   createdAt: string;
   updatedAt: string;
 }

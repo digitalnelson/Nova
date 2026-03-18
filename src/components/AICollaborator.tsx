@@ -82,7 +82,7 @@ interface AICollaboratorProps {
   notes: string;
   azureConfig: AzureConfig;
   getArticleHtml: () => Promise<string>;
-  onApplyChanges: (newHtml: string) => void;
+  onApplyChanges: (newHtml: string, label: string) => void;
 }
 
 export default function AICollaborator({
@@ -153,7 +153,7 @@ export default function AICollaborator({
 
   const handleApply = () => {
     if (previewHtml) {
-      onApplyChanges(previewHtml);
+      onApplyChanges(previewHtml, selectedOpDef?.label ?? 'AI Revision');
       setPreviewVisible(false);
       setPreviewHtml(null);
       setInstruction('');

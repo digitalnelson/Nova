@@ -30,7 +30,7 @@ interface WritingBuddyProps {
   azureConfig: AzureConfig;
   getArticleHtml: () => Promise<string>;
   onInsertContent: (html: string) => void;
-  onReplaceContent: (html: string) => void;
+  onReplaceContent: (html: string, label: string) => void;
 }
 
 const QUICK_CHIPS = [
@@ -55,6 +55,7 @@ export default function WritingBuddy({
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; type: 'working' | 'done' | 'error' | 'info' } | null>(null);
   const [infoResult, setInfoResult] = useState<string | null>(null);
+  const [pendingReplace, setPendingReplace] = useState<{ content: string; label: string } | null>(null);
   const [errorModal, setErrorModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -100,6 +101,7 @@ export default function WritingBuddy({
     setSheetOpen(false);
     setCommand('');
     setInfoResult(null);
+    setPendingReplace(null);
     setBusy(true);
     showToast('✦ Working…', 'working');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -121,8 +123,9 @@ export default function WritingBuddy({
       showToast(`✓ ${res.label}`, 'done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else if (res.action === 'replace') {
-      onReplaceContent(res.content);
-      showToast(`✓ ${res.label}`, 'done');
+      // Preview before applying so the AI acts as an editor, not a bulldozer
+      setPendingReplace({ content: res.content, label: res.label });
+      setSheetOpen(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
       // info — show in sheet
@@ -194,9 +197,9 @@ export default function WritingBuddy({
         animationType="slide"
         transparent
         presentationStyle="overFullScreen"
-        onRequestClose={() => setSheetOpen(false)}
+        onRequestClose={() => { setSheetOpen(false); setPendingReplace(null); }}
       >
-        <Pressable style={styles.backdrop} onPress={() => setSheetOpen(false)} />
+        <Pressable style={styles.backdrop} onPress={() => { setSheetOpen(false); setPendingReplace(null); }} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.sheetWrapper}
@@ -219,64 +222,123 @@ export default function WritingBuddy({
                 <Text style={styles.sheetTitle}>Writing Buddy</Text>
                 <Text style={styles.sheetSub}>What can I help you write?</Text>
               </View>
-              <Pressable onPress={() => setSheetOpen(false)} style={styles.closeBtn}>
+              <Pressable onPress={() => { setSheetOpen(false); setPendingReplace(null); }} style={styles.closeBtn}>
                 <Text style={styles.closeBtnText}>✕</Text>
               </Pressable>
             </View>
 
-            {/* Info result */}
-            {infoResult && (
-              <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-                <Text style={styles.infoText}>{infoResult}</Text>
-              </ScrollView>
+            {/* Pending replace preview — shown instead of normal UI */}
+            {pendingReplace ? (
+              <View style={styles.replacePreview}>
+                <View style={styles.replacePreviewHeader}>
+                  <Text style={styles.replacePreviewTitle}>AI suggests rewriting your article</Text>
+                  <Text style={styles.replacePreviewSub}>{pendingReplace.label} — review below</Text>
+                </View>
+                <ScrollView
+                  style={styles.replacePreviewScroll}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
+                  <Text style={styles.replacePreviewText}>
+                    {pendingReplace.content
+                      .replace(/<\/?(h[1-6])[^>]*>/gi, '\n\n')
+                      .replace(/<br\s*\/?>/gi, '\n')
+                      .replace(/<\/p>/gi, '\n\n')
+                      .replace(/<li>/gi, '\n• ')
+                      .replace(/<[^>]+>/g, '')
+                      .replace(/&amp;/g, '&')
+                      .replace(/&lt;/g, '<')
+                      .replace(/&gt;/g, '>')
+                      .replace(/&nbsp;/g, ' ')
+                      .replace(/\n{3,}/g, '\n\n')
+                      .trim()}
+                  </Text>
+                </ScrollView>
+                <View style={styles.replaceActions}>
+                  <Pressable
+                    style={styles.replaceDiscardBtn}
+                    onPress={() => { setPendingReplace(null); setSheetOpen(false); }}
+                  >
+                    <Text style={styles.replaceDiscardText}>Discard</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.replaceApplyBtn}
+                    onPress={() => {
+                      onReplaceContent(pendingReplace.content, pendingReplace.label);
+                      setPendingReplace(null);
+                      setSheetOpen(false);
+                      showToast(`✓ ${pendingReplace.label} applied`, 'done');
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    }}
+                  >
+                    <LinearGradient
+                      colors={[Colors.gradientStart, Colors.gradientEnd]}
+                      style={styles.replaceApplyGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.replaceApplyText}>Apply to Article</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <>
+                {/* Info result */}
+                {infoResult && (
+                  <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                    <Text style={styles.infoText}>{infoResult}</Text>
+                  </ScrollView>
+                )}
+
+                {/* Quick chips */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.chipsScroll}
+                  contentContainerStyle={styles.chipsContent}
+                >
+                  {QUICK_CHIPS.map((chip) => (
+                    <Pressable
+                      key={chip.label}
+                      style={styles.chip}
+                      onPress={() => runCommand(chip.command)}
+                    >
+                      <Text style={styles.chipText}>{chip.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                {/* Input row */}
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.input}
+                    value={command}
+                    onChangeText={setCommand}
+                    placeholder="Ask anything about your article…"
+                    placeholderTextColor={Colors.textMuted}
+                    multiline
+                    maxLength={300}
+                    returnKeyType="send"
+                    onSubmitEditing={() => runCommand(command)}
+                  />
+                  <Pressable
+                    style={[styles.sendBtn, !command.trim() && styles.sendBtnDisabled]}
+                    onPress={() => runCommand(command)}
+                    disabled={!command.trim()}
+                  >
+                    <LinearGradient
+                      colors={command.trim() ? [Colors.gradientStart, Colors.gradientEnd] : ['#2A2A3A', '#2A2A3A']}
+                      style={styles.sendBtnGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.sendBtnIcon}>↑</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </>
             )}
-
-            {/* Quick chips */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipsScroll}
-              contentContainerStyle={styles.chipsContent}
-            >
-              {QUICK_CHIPS.map((chip) => (
-                <Pressable
-                  key={chip.label}
-                  style={styles.chip}
-                  onPress={() => runCommand(chip.command)}
-                >
-                  <Text style={styles.chipText}>{chip.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            {/* Input row */}
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                value={command}
-                onChangeText={setCommand}
-                placeholder="Ask anything about your article…"
-                placeholderTextColor={Colors.textMuted}
-                multiline
-                maxLength={300}
-                returnKeyType="send"
-                onSubmitEditing={() => runCommand(command)}
-              />
-              <Pressable
-                style={[styles.sendBtn, !command.trim() && styles.sendBtnDisabled]}
-                onPress={() => runCommand(command)}
-                disabled={!command.trim()}
-              >
-                <LinearGradient
-                  colors={command.trim() ? [Colors.gradientStart, Colors.gradientEnd] : ['#2A2A3A', '#2A2A3A']}
-                  style={styles.sendBtnGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Text style={styles.sendBtnIcon}>↑</Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -476,6 +538,77 @@ const styles = StyleSheet.create({
   sendBtnIcon: {
     color: Colors.white,
     fontSize: 18,
+    fontWeight: '700',
+  },
+  // Replace preview
+  replacePreview: {
+    marginTop: 4,
+  },
+  replacePreviewHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  replacePreviewTitle: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  replacePreviewSub: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  replacePreviewScroll: {
+    maxHeight: 220,
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  replacePreviewText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    padding: 12,
+  },
+  replaceActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  replaceDiscardBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  replaceDiscardText: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  replaceApplyBtn: {
+    flex: 2,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  replaceApplyGradient: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  replaceApplyText: {
+    color: Colors.white,
+    fontSize: 15,
     fontWeight: '700',
   },
 });
