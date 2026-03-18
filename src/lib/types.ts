@@ -11,6 +11,7 @@ export interface ArticleIdea {
   id: string;
   title: string;
   notes: string;
+  content: string;
   tags: string[];
   status: IdeaStatus;
   aiContent?: AIContent;

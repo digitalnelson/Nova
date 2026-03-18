@@ -31,15 +31,18 @@ function formatDate(isoString: string): string {
 }
 
 function estimateReadTime(idea: ArticleIdea): string {
-  const text = [
-    idea.title,
-    idea.notes,
-    idea.aiContent?.outline ?? '',
-    idea.aiContent?.intro ?? '',
-  ].join(' ');
+  if (idea.content) {
+    const text = idea.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const words = text.split(' ').filter(Boolean).length;
+    if (words > 0) {
+      const mins = Math.max(1, Math.round(words / 200));
+      return `${words.toLocaleString()} words · ${mins} min`;
+    }
+  }
+  const text = [idea.title, idea.notes].join(' ');
   const words = text.split(/\s+/).filter(Boolean).length;
   const mins = Math.max(1, Math.round(words / 200));
-  return `${mins} min read`;
+  return `~${mins} min read`;
 }
 
 interface AIChip {
@@ -48,6 +51,9 @@ interface AIChip {
 
 function getAIChips(idea: ArticleIdea): AIChip[] {
   const chips: AIChip[] = [];
+  if (idea.content && idea.content.replace(/<[^>]*>/g, '').trim()) {
+    chips.push({ label: '✍ Written' });
+  }
   if (idea.aiContent?.outline) chips.push({ label: 'Outline' });
   if (idea.aiContent?.intro) chips.push({ label: 'Intro' });
   if (idea.aiContent?.improvedTitles?.length) {

@@ -66,9 +66,10 @@ interface AIPanelProps {
   notes: string;
   azureConfig: AzureConfig;
   onTagsGenerated?: (tags: string[]) => void;
+  onInsertContent?: (content: string) => void;
 }
 
-export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: AIPanelProps) {
+export default function AIPanel({ title, notes, azureConfig, onTagsGenerated, onInsertContent }: AIPanelProps) {
   const [activeAction, setActiveAction] = useState<AIAction | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string>('');
@@ -191,6 +192,17 @@ export default function AIPanel({ title, notes, azureConfig, onTagsGenerated }: 
               {AI_ACTIONS.find((a) => a.action === resultAction)?.icon}{' '}
               {AI_ACTIONS.find((a) => a.action === resultAction)?.label}
             </Text>
+            {onInsertContent && (resultAction === 'outline' || resultAction === 'intro') && (
+              <Pressable
+                style={styles.insertBtn}
+                onPress={() => {
+                  onInsertContent(result);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <Text style={styles.insertBtnText}>↙ Insert</Text>
+              </Pressable>
+            )}
           </View>
           <ScrollView
             style={styles.resultScroll}
@@ -283,6 +295,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
@@ -290,6 +305,20 @@ const styles = StyleSheet.create({
   resultLabel: {
     color: Colors.accentBright,
     fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  insertBtn: {
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  insertBtnText: {
+    color: Colors.accentBright,
+    fontSize: 12,
     fontWeight: '600',
   },
   resultScroll: {

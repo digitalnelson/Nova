@@ -144,6 +144,7 @@ export default function NewIdeaScreen() {
       id: generateId(),
       title: title.trim(),
       notes: notes.trim(),
+      content: '',
       tags,
       status: 'draft',
       aiContent: Object.keys(aiContent).length ? aiContent : undefined,
