@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   Alert,
   useWindowDimensions,
@@ -713,10 +712,7 @@ export default function IdeaDetailScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
+      <View style={styles.keyboardView}>
         {isTablet ? (
           <View style={styles.tabletRow}>
             <View style={styles.tabletMain}>{mainContent}</View>
@@ -743,7 +739,7 @@ export default function IdeaDetailScreen() {
           mainContent
         )}
         <Toolbar editor={editor} />
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
