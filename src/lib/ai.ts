@@ -1,3 +1,5 @@
+import Anthropic from '@anthropic-ai/sdk';
+
 export interface AIDebugInfo {
   endpoint: string;
   deployment: string;
@@ -16,72 +18,55 @@ export interface AIResponse {
 interface AzureConfig {
   endpoint: string; // base URL, e.g. https://resource.services.ai.azure.com/anthropic/
   apiKey: string;
-  deployment: string; // model name, e.g. claude-sonnet-4-6
+  deployment: string; // model deployment name, e.g. claude-sonnet-4-6
 }
 
-/** Normalise whatever the user typed into the base URL pattern, then append
- *  the messages path + Azure's required ?api-version query param. */
-function buildMessagesUrl(endpoint: string): string {
-  // Strip any trailing /v1/messages (and optional query string) so we always
-  // reconstruct from the base URL, matching how AnthropicFoundry works.
-  let base = endpoint.trim().replace(/\/v1\/messages(\?.*)?$/, '');
-  // Ensure single trailing slash before the path segment
-  if (!base.endsWith('/')) base += '/';
-  return `${base}v1/messages?api-version=2023-06-01`;
+function makeClient(config: AzureConfig): Anthropic {
+  // Strip trailing /v1/messages if user pasted the full URL
+  const baseURL = config.endpoint.trim().replace(/\/v1\/messages(\?.*)?$/, '');
+  return new Anthropic({
+    baseURL,
+    apiKey: config.apiKey,
+    // Azure AI Foundry uses 'api-key' header instead of Anthropic's 'x-api-key'
+    defaultHeaders: { 'api-key': config.apiKey },
+    // Azure requires the api-version as a query param
+    defaultQuery: { 'api-version': '2023-06-01' },
+    dangerouslyAllowBrowser: true,
+  });
 }
 
 async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
+  const client = makeClient(config);
   const requestBody = {
     model: config.deployment,
     max_tokens: 1500,
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user' as const, content: prompt }],
   };
   const keyLength = config.apiKey?.length ?? 0;
-  const url = buildMessagesUrl(config.endpoint);
-  console.log('[AI] url:', url);
+  console.log('[AI] baseURL:', config.endpoint);
   console.log('[AI] deployment:', config.deployment);
   console.log('[AI] apiKey length:', keyLength);
+
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': config.apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const rawText = await res.text();
-    console.log('[AI] status:', res.status);
-    console.log('[AI] response:', rawText);
-
-    const debugInfo: AIDebugInfo = {
-      endpoint: url,
-      deployment: config.deployment,
-      keyLength,
-      status: res.status,
-      requestBody,
-      rawResponse: rawText,
-    };
-
-    if (!res.ok) {
-      return { content: '', error: `HTTP ${res.status}`, debugInfo };
-    }
-
-    const data = JSON.parse(rawText);
-    return { content: data.content[0].text };
+    const message = await client.messages.create(requestBody);
+    const text = message.content[0].type === 'text' ? message.content[0].text : '';
+    return { content: text };
   } catch (e: any) {
+    // Anthropic SDK throws structured errors
+    const status = e.status ?? 0;
+    const rawResponse = e.message ?? String(e);
+    console.log('[AI] error status:', status);
+    console.log('[AI] error:', rawResponse);
     return {
       content: '',
-      error: e.message ?? 'Network error',
+      error: `HTTP ${status || 'Network error'}`,
       debugInfo: {
         endpoint: config.endpoint,
         deployment: config.deployment,
         keyLength,
-        status: 0,
+        status,
         requestBody,
-        rawResponse: e.message ?? '',
+        rawResponse: e.error ? JSON.stringify(e.error) : rawResponse,
       },
     };
   }
