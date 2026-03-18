@@ -117,7 +117,6 @@ const TOOLBAR_THEME = {
       borderBottomWidth: 0,
       minWidth: '100%' as const,
       height: 44,
-      flex: 1,
     },
     toolbarButton: {
       backgroundColor: '#1A1A2A',
@@ -151,9 +150,7 @@ const TOOLBAR_THEME = {
       display: 'none' as const,
     },
     keyboardAvoidingView: {
-      position: 'absolute' as const,
       width: '100%' as const,
-      bottom: 0,
     },
   },
   webview: {
@@ -247,7 +244,7 @@ export default function IdeaDetailScreen() {
   }, []);
 
   const editor = useEditorBridge({
-    autofocus: false,
+    autofocus: true,
     dynamicHeight: false,
     theme: TOOLBAR_THEME,
     onChange: () => {
@@ -336,6 +333,9 @@ export default function IdeaDetailScreen() {
       contentSetInEditor.current = true;
       log.info('Setting initial content — length:', htmlContent.length);
       editor.setContent(htmlContent);
+      // Blur to dismiss keyboard — autofocus:true initialises the bridge eagerly
+      // but we don't want the keyboard to appear on load
+      editor.blur();
     }
   }, [editorState.isReady, htmlContent, editor]);
 
@@ -658,8 +658,8 @@ export default function IdeaDetailScreen() {
           <Text style={styles.backText}>‹ Back</Text>
         </Pressable>
         <View style={styles.navRight}>
-          {keyboardVisible && (
-            <Pressable style={styles.keyboardDismissBtn} onPress={() => Keyboard.dismiss()}>
+          {(keyboardVisible || editorState.isFocused) && (
+            <Pressable style={styles.keyboardDismissBtn} onPress={() => { editor.blur(); Keyboard.dismiss(); }}>
               <Text style={styles.keyboardDismissText}>Done</Text>
             </Pressable>
           )}
@@ -707,6 +707,14 @@ export default function IdeaDetailScreen() {
         ) : (
           mainContent
         )}
+      </KeyboardAvoidingView>
+
+      {/* Toolbar in its own KAV so it rises above the keyboard independently,
+          avoiding the double-KAV problem that caused wrong positioning on iOS */}
+      <KeyboardAvoidingView
+        behavior="position"
+        style={styles.toolbarKAV}
+      >
         <Toolbar editor={editor} />
       </KeyboardAvoidingView>
 
@@ -1035,6 +1043,14 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     fontSize: 15,
     fontWeight: '600',
+  },
+  // Toolbar wrapper — sits outside the main KAV so it uses its own
+  // keyboard avoidance (behavior="position") and doesn't cause double-offset
+  toolbarKAV: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   // Keyboard dismiss button
   keyboardDismissBtn: {
