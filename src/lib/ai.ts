@@ -14,9 +14,20 @@ export interface AIResponse {
 }
 
 interface AzureConfig {
-  endpoint: string; // full URL, e.g. https://resource.services.ai.azure.com/anthropic/v1/messages
+  endpoint: string; // base URL, e.g. https://resource.services.ai.azure.com/anthropic/
   apiKey: string;
-  deployment: string; // model name, e.g. claude-opus-4-6
+  deployment: string; // model name, e.g. claude-sonnet-4-6
+}
+
+/** Normalise whatever the user typed into the base URL pattern, then append
+ *  the messages path + Azure's required ?api-version query param. */
+function buildMessagesUrl(endpoint: string): string {
+  // Strip any trailing /v1/messages (and optional query string) so we always
+  // reconstruct from the base URL, matching how AnthropicFoundry works.
+  let base = endpoint.trim().replace(/\/v1\/messages(\?.*)?$/, '');
+  // Ensure single trailing slash before the path segment
+  if (!base.endsWith('/')) base += '/';
+  return `${base}v1/messages?api-version=2023-06-01`;
 }
 
 async function callClaude(config: AzureConfig, prompt: string): Promise<AIResponse> {
@@ -26,11 +37,12 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
     messages: [{ role: 'user', content: prompt }],
   };
   const keyLength = config.apiKey?.length ?? 0;
-  console.log('[AI] endpoint:', config.endpoint);
+  const url = buildMessagesUrl(config.endpoint);
+  console.log('[AI] url:', url);
   console.log('[AI] deployment:', config.deployment);
   console.log('[AI] apiKey length:', keyLength);
   try {
-    const res = await fetch(config.endpoint, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -45,7 +57,7 @@ async function callClaude(config: AzureConfig, prompt: string): Promise<AIRespon
     console.log('[AI] response:', rawText);
 
     const debugInfo: AIDebugInfo = {
-      endpoint: config.endpoint,
+      endpoint: url,
       deployment: config.deployment,
       keyLength,
       status: res.status,

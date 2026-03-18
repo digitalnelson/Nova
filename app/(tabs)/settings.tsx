@@ -177,8 +177,8 @@ export default function SettingsScreen() {
             label="Endpoint URL"
             value={settings.azureEndpoint}
             onChangeText={update('azureEndpoint')}
-            placeholder="https://<resource>.services.ai.azure.com/anthropic/v1/messages"
-            hint="Full messages URL from Azure AI Foundry — includes /anthropic/v1/messages"
+            placeholder="https://<resource>.services.ai.azure.com/anthropic/"
+            hint="Base URL ending in /anthropic/ — the app appends v1/messages?api-version automatically"
           />
           <SettingRow
             label="API Key"
