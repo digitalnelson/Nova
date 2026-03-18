@@ -32,6 +32,7 @@ interface HeroImagePanelProps {
   imageConfig: ImageConfig;
   currentDataUri?: string;
   onImageGenerated: (dataUri: string) => void;
+  compact?: boolean;
 }
 
 export default function HeroImagePanel({
@@ -41,6 +42,7 @@ export default function HeroImagePanel({
   imageConfig,
   currentDataUri,
   onImageGenerated,
+  compact = false,
 }: HeroImagePanelProps) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +88,62 @@ export default function HeroImagePanel({
     }
   };
 
+  // ── Compact mode (mobile) ──────────────────────────────────────────────────
+  if (compact) {
+    if (currentDataUri) {
+      return (
+        <View style={styles.compactContainer}>
+          <View style={styles.compactImageWrapper}>
+            <Image source={{ uri: currentDataUri }} style={styles.compactImage} resizeMode="cover" />
+            <LinearGradient
+              colors={['transparent', 'rgba(9,9,15,0.65)']}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0.3 }}
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.compactOverlay}>
+              <Text style={styles.compactLabel}>🖼️ Hero Image</Text>
+              <Pressable
+                style={[styles.compactRegenBtn, generating && styles.regenBtnDisabled]}
+                onPress={handleGenerate}
+                disabled={generating}
+              >
+                {generating ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Text style={styles.regenBtnText}>↺ Regen</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+          {error && (
+            <Text style={styles.compactError} numberOfLines={1}>⚠ {error}</Text>
+          )}
+        </View>
+      );
+    }
+    return (
+      <Pressable
+        style={[styles.compactEmpty, generating && styles.compactEmptyGenerating]}
+        onPress={handleGenerate}
+        disabled={generating}
+      >
+        {generating ? (
+          <>
+            <ActivityIndicator size="small" color={Colors.accentBright} />
+            <Text style={styles.compactEmptyText}>Generating hero image…</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.compactEmptyIcon}>🎨</Text>
+            <Text style={styles.compactEmptyText}>Generate hero image</Text>
+          </>
+        )}
+      </Pressable>
+    );
+  }
+
+  // ── Full mode (tablet / details section) ───────────────────────────────────
   return (
     <View style={styles.container}>
       {currentDataUri ? (
@@ -166,6 +224,78 @@ export default function HeroImagePanel({
 }
 
 const styles = StyleSheet.create({
+  // Compact mode styles
+  compactContainer: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  compactImageWrapper: {
+    height: 72,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  compactImage: {
+    width: '100%',
+    height: '100%',
+  },
+  compactOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 6,
+  },
+  compactLabel: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  compactRegenBtn: {
+    backgroundColor: 'rgba(124, 106, 247, 0.85)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    minWidth: 36,
+    alignItems: 'center',
+  },
+  compactError: {
+    color: Colors.danger,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  compactEmpty: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    backgroundColor: Colors.surface,
+  },
+  compactEmptyGenerating: {
+    borderStyle: 'solid',
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
+  compactEmptyIcon: {
+    fontSize: 16,
+  },
+  compactEmptyText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  // Full mode styles
   container: {
     marginHorizontal: 12,
     marginBottom: 4,
