@@ -359,3 +359,75 @@ IMPORTANT RULES:
     };
   }
 }
+
+// ─── Writing Buddy ────────────────────────────────────────────────────────────
+
+export type BuddyAction = 'insert' | 'replace' | 'info';
+
+export interface BuddyResponse {
+  action: BuddyAction;
+  label: string;
+  content: string;
+  error?: string;
+  debugInfo?: AIDebugInfo;
+}
+
+export async function buddyAssist(
+  config: AzureConfig,
+  command: string,
+  title: string,
+  notes: string,
+  articleHtml: string
+): Promise<BuddyResponse> {
+  const prompt = `You are a writing assistant embedded in a rich text article editor for aipsychmd.com, a professional blog about AI and psychiatry for clinicians and healthcare technology professionals.
+
+Article title: "${title}"
+${notes ? `Brief/notes: ${notes}` : ''}
+Current article HTML:
+${articleHtml || '(empty — no content yet)'}
+
+The writer has sent this command: "${command}"
+
+Choose the appropriate action and respond with JSON in EXACTLY this format (no markdown, no code fences):
+{"action":"insert"|"replace"|"info","label":"brief label max 5 words","content":"..."}
+
+Rules:
+- "insert": writer wants to ADD new content (write intro, generate outline, add a new section, etc). Return an HTML snippet to append to the article.
+- "replace": writer wants to MODIFY the existing article (improve writing, SEO optimize, medical review, strengthen intro, fix grammar, etc). Return the complete updated article HTML.
+- "info": for title suggestions, tag ideas, word count analysis, or questions. Return plain readable text.
+For "insert" and "replace": return clean HTML, no markdown fences.
+For "info": return plain text, no HTML.
+Return ONLY the JSON object.`;
+
+  const client = makeClient(config);
+  const requestBody = {
+    model: config.deployment,
+    max_tokens: 4000,
+    messages: [{ role: 'user' as const, content: prompt }],
+  };
+
+  try {
+    const message = await client.messages.create(requestBody);
+    const raw = message.content[0].type === 'text' ? message.content[0].text : '';
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleaned) as { action: BuddyAction; label: string; content: string };
+    return { action: parsed.action, label: parsed.label, content: parsed.content };
+  } catch (e: any) {
+    const status = e.status ?? 0;
+    const rawResponse = e.message ?? String(e);
+    return {
+      action: 'info',
+      label: 'Error',
+      content: '',
+      error: `HTTP ${status || 'Network error'}`,
+      debugInfo: {
+        endpoint: config.endpoint,
+        deployment: config.deployment,
+        keyLength: config.apiKey?.length ?? 0,
+        status,
+        requestBody,
+        rawResponse: e.error ? JSON.stringify(e.error) : rawResponse,
+      },
+    };
+  }
+}
