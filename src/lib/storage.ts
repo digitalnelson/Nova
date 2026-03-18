@@ -31,7 +31,12 @@ export async function getSettings(): Promise<AppSettings> {
   return raw
     ? JSON.parse(raw)
     : {
-        anthropicApiKey: '',
+        azureEndpoint: '',
+        azureApiKey: '',
+        azureDeployment: 'claude-opus-4-6',
+        imageEndpoint: '',
+        imageApiKey: '',
+        imageDeployment: 'dall-e-3',
         wordpressUrl: '',
         wordpressUsername: '',
         wordpressAppPassword: '',

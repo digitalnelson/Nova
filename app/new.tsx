@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,39 +17,102 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../src/constants/colors';
 import { saveIdea, getSettings } from '../src/lib/storage';
-import { ArticleIdea } from '../src/lib/types';
+import { ArticleIdea, AIContent } from '../src/lib/types';
+import { generateOutline, improveTitles, suggestTags, writeIntro, AIDebugInfo } from '../src/lib/ai';
 import TagPill from '../src/components/TagPill';
-import AIPanel from '../src/components/AIPanel';
+import AIDebugModal from '../src/components/AIDebugModal';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
+
+type AIAction = 'outline' | 'titles' | 'tags' | 'intro';
+
+const AI_ACTIONS: { action: AIAction; icon: string; label: string }[] = [
+  { action: 'outline', icon: '📋', label: 'Outline' },
+  { action: 'titles', icon: '✏️', label: 'Titles' },
+  { action: 'tags', icon: '🏷️', label: 'Tags' },
+  { action: 'intro', icon: '🖊️', label: 'Intro' },
+];
 
 export default function NewIdeaScreen() {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
-  const [showAI, setShowAI] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [azureConfig, setAzureConfig] = useState({ endpoint: '', apiKey: '', deployment: '' });
+
+  // AI state
+  const [loadingAction, setLoadingAction] = useState<AIAction | null>(null);
+  const [aiResults, setAiResults] = useState<Partial<Record<AIAction, string>>>({});
+  const [expandedResult, setExpandedResult] = useState<AIAction | null>(null);
+  const [errorModal, setErrorModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
+
   const titleRef = useRef<TextInput>(null);
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 300);
-    getSettings().then((s) => setApiKey(s.anthropicApiKey));
+    getSettings().then((s) => setAzureConfig({
+      endpoint: s.azureEndpoint,
+      apiKey: s.azureApiKey,
+      deployment: s.azureDeployment,
+    }));
   }, []);
 
   const addTag = (raw: string) => {
     const tag = raw.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, '-');
-    if (tag && !tags.includes(tag)) {
-      setTags((prev) => [...prev, tag]);
-    }
+    if (tag && !tags.includes(tag)) setTags((prev) => [...prev, tag]);
     setTagInput('');
   };
 
-  const handleTagInputSubmit = () => {
-    if (tagInput.trim()) addTag(tagInput);
+  const runAI = async (action: AIAction) => {
+    if (!azureConfig.endpoint || !azureConfig.apiKey) {
+      Alert.alert('Azure Configuration Required', 'Add your Azure AI Foundry endpoint and API key in Settings.');
+      return;
+    }
+    if (!title.trim()) {
+      Alert.alert('Add a title first', 'Give your idea a title before running AI tools.');
+      return;
+    }
+
+    setLoadingAction(action);
+    setExpandedResult(action);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    let res;
+    switch (action) {
+      case 'outline': res = await generateOutline(azureConfig, title, notes); break;
+      case 'titles':  res = await improveTitles(azureConfig, title, notes);   break;
+      case 'tags':    res = await suggestTags(azureConfig, title, notes);     break;
+      case 'intro':   res = await writeIntro(azureConfig, title, notes);      break;
+    }
+
+    setLoadingAction(null);
+
+    if (res.error) {
+      setErrorModal({ error: res.error, debugInfo: res.debugInfo });
+      return;
+    }
+
+    setAiResults((prev) => ({ ...prev, [action]: res.content }));
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    // Auto-apply tags
+    if (action === 'tags') {
+      const suggested = res.content
+        .split(',')
+        .map((t: string) => t.trim().toLowerCase().replace(/^#/, ''))
+        .filter(Boolean)
+        .slice(0, 8);
+      setTags((prev) => {
+        const merged = [...prev];
+        for (const tag of suggested) {
+          if (!merged.includes(tag)) merged.push(tag);
+        }
+        return merged.slice(0, 10);
+      });
+    }
   };
 
   const handleSave = async () => {
@@ -59,13 +123,31 @@ export default function NewIdeaScreen() {
     setSaving(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
+    const aiContent: AIContent = {};
+    if (aiResults.outline) aiContent.outline = aiResults.outline;
+    if (aiResults.intro) aiContent.intro = aiResults.intro;
+    if (aiResults.titles) {
+      aiContent.improvedTitles = aiResults.titles
+        .split('\n')
+        .filter((l: string) => l.trim())
+        .slice(0, 5);
+    }
+    if (aiResults.tags) {
+      aiContent.suggestedTags = aiResults.tags
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean);
+    }
+
     const now = new Date().toISOString();
     const idea: ArticleIdea = {
       id: generateId(),
       title: title.trim(),
       notes: notes.trim(),
+      content: '',
       tags,
       status: 'draft',
+      aiContent: Object.keys(aiContent).length ? aiContent : undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -75,22 +157,17 @@ export default function NewIdeaScreen() {
     router.back();
   };
 
-  const handleAITagsGenerated = (suggested: string[]) => {
-    setTags((prev) => {
-      const merged = [...prev];
-      for (const tag of suggested) {
-        if (!merged.includes(tag)) merged.push(tag);
-      }
-      return merged.slice(0, 10);
-    });
-  };
+  const hasAnyResult = Object.keys(aiResults).length > 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
+      <AIDebugModal
+        visible={!!errorModal}
+        error={errorModal?.error ?? ''}
+        debugInfo={errorModal?.debugInfo}
+        onClose={() => setErrorModal(null)}
+      />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         {/* Nav bar */}
         <View style={styles.navBar}>
           <Pressable style={styles.cancelBtn} onPress={() => router.back()}>
@@ -119,7 +196,7 @@ export default function NewIdeaScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Title input */}
+          {/* Title */}
           <TextInput
             ref={titleRef}
             style={styles.titleInput}
@@ -132,10 +209,10 @@ export default function NewIdeaScreen() {
             blurOnSubmit
           />
 
-          {/* Notes input */}
+          {/* Notes */}
           <TextInput
             style={styles.notesInput}
-            placeholder="Add some notes, context, or a quick outline…"
+            placeholder="Add some notes, context, or a rough outline…"
             placeholderTextColor={Colors.textMuted}
             value={notes}
             onChangeText={setNotes}
@@ -143,7 +220,61 @@ export default function NewIdeaScreen() {
             textAlignVertical="top"
           />
 
-          {/* Tags section */}
+          {/* ── AI Quick Actions ── always visible, part of the flow */}
+          <View style={styles.aiSection}>
+            <View style={styles.aiSectionHeader}>
+              <Text style={styles.aiSectionIcon}>⚡</Text>
+              <Text style={styles.aiSectionLabel}>AI</Text>
+              {(!azureConfig.endpoint || !azureConfig.apiKey) && (
+                <Text style={styles.aiKeyHint}>  Configure Azure in Settings</Text>
+              )}
+            </View>
+            <View style={styles.aiActionsRow}>
+              {AI_ACTIONS.map(({ action, icon, label }) => {
+                const isLoading = loadingAction === action;
+                const isDone = !!aiResults[action];
+                const isExpanded = expandedResult === action && isDone;
+                return (
+                  <Pressable
+                    key={action}
+                    style={[
+                      styles.aiActionChip,
+                      isDone && styles.aiActionChipDone,
+                      isExpanded && styles.aiActionChipExpanded,
+                    ]}
+                    onPress={() => {
+                      if (isDone && expandedResult === action) {
+                        setExpandedResult(null);
+                      } else if (isDone) {
+                        setExpandedResult(action);
+                      } else {
+                        runAI(action);
+                      }
+                    }}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color={Colors.accent} />
+                    ) : (
+                      <Text style={styles.aiActionIcon}>{isDone ? '✓' : icon}</Text>
+                    )}
+                    <Text style={[styles.aiActionLabel, isDone && styles.aiActionLabelDone]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Expanded result */}
+            {expandedResult && aiResults[expandedResult] && (
+              <View style={styles.resultBox}>
+                <Text style={styles.resultText}>{aiResults[expandedResult]}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Tags */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Tags</Text>
             <View style={styles.tagInputRow}>
@@ -153,7 +284,7 @@ export default function NewIdeaScreen() {
                 placeholderTextColor={Colors.textMuted}
                 value={tagInput}
                 onChangeText={setTagInput}
-                onSubmitEditing={handleTagInputSubmit}
+                onSubmitEditing={() => { if (tagInput.trim()) addTag(tagInput); }}
                 returnKeyType="done"
                 autoCapitalize="none"
               />
@@ -170,33 +301,6 @@ export default function NewIdeaScreen() {
               </View>
             )}
           </View>
-
-          {/* AI toggle */}
-          <Pressable
-            style={[styles.aiToggle, showAI && styles.aiToggleActive]}
-            onPress={() => {
-              setShowAI((v) => !v);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-          >
-            <Text style={styles.aiToggleIcon}>⚡</Text>
-            <Text style={[styles.aiToggleText, showAI && styles.aiToggleTextActive]}>
-              {showAI ? 'Hide AI Tools' : 'AI Tools'}
-            </Text>
-            <Text style={styles.aiChevron}>{showAI ? '▲' : '▼'}</Text>
-          </Pressable>
-
-          {/* AI Panel */}
-          {showAI && (
-            <View style={styles.aiPanelWrapper}>
-              <AIPanel
-                title={title}
-                notes={notes}
-                apiKey={apiKey}
-                onTagsGenerated={handleAITagsGenerated}
-              />
-            </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -217,42 +321,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
-  cancelBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-  },
-  cancelText: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-  },
-  navTitle: {
-    color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveBtn: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  saveBtnDisabled: {
-    opacity: 0.5,
-  },
-  saveBtnGradient: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-  },
-  saveText: {
-    color: Colors.white,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  cancelBtn: { paddingVertical: 4, paddingHorizontal: 4 },
+  cancelText: { color: Colors.textSecondary, fontSize: 16 },
+  navTitle: { color: Colors.textPrimary, fontSize: 16, fontWeight: '600' },
+  saveBtn: { borderRadius: 20, overflow: 'hidden' },
+  saveBtnDisabled: { opacity: 0.5 },
+  saveBtnGradient: { paddingHorizontal: 18, paddingVertical: 8 },
+  saveText: { color: Colors.white, fontSize: 15, fontWeight: '600' },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 20, paddingBottom: 40 },
   titleInput: {
     color: Colors.textPrimary,
     fontSize: 26,
@@ -265,13 +342,75 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 16,
     lineHeight: 24,
-    minHeight: 100,
+    minHeight: 90,
     padding: 0,
-    marginBottom: 24,
-  },
-  section: {
     marginBottom: 20,
   },
+  // AI section
+  aiSection: {
+    backgroundColor: Colors.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    marginBottom: 20,
+  },
+  aiSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 5,
+  },
+  aiSectionIcon: { fontSize: 14 },
+  aiSectionLabel: {
+    color: Colors.accentBright,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  aiKeyHint: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
+  aiActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  aiActionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  aiActionChipDone: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
+  aiActionChipExpanded: {
+    borderColor: Colors.accentBright,
+  },
+  aiActionIcon: { fontSize: 14 },
+  aiActionLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  aiActionLabelDone: { color: Colors.accentBright, fontWeight: '600' },
+  resultBox: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  resultText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  // Tags
+  section: { marginBottom: 20 },
   sectionLabel: {
     color: Colors.textMuted,
     fontSize: 12,
@@ -281,8 +420,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   tagInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: Colors.surface,
     borderRadius: 12,
     borderWidth: 1,
@@ -290,50 +427,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  tagInput: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 15,
-    padding: 0,
-  },
-  tagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
-  },
-  aiToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 14,
-    marginBottom: 12,
-  },
-  aiToggleActive: {
-    borderColor: Colors.accent,
-    backgroundColor: Colors.accentSoft,
-  },
-  aiToggleIcon: {
-    fontSize: 18,
-  },
-  aiToggleText: {
-    flex: 1,
-    color: Colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  aiToggleTextActive: {
-    color: Colors.accentBright,
-  },
-  aiChevron: {
-    color: Colors.textMuted,
-    fontSize: 12,
-  },
-  aiPanelWrapper: {
-    marginBottom: 20,
-  },
+  tagInput: { color: Colors.textPrimary, fontSize: 15, padding: 0 },
+  tagsList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
 });

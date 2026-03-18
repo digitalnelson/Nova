@@ -11,6 +11,8 @@ export interface ArticleIdea {
   id: string;
   title: string;
   notes: string;
+  content: string;
+  heroImageDataUri?: string; // base64 data URI — persists without expiry
   tags: string[];
   status: IdeaStatus;
   aiContent?: AIContent;
@@ -19,7 +21,13 @@ export interface ArticleIdea {
 }
 
 export interface AppSettings {
-  anthropicApiKey: string;
+  azureEndpoint: string;
+  azureApiKey: string;
+  azureDeployment: string;
+  // Image generation (Azure OpenAI DALL-E 3)
+  imageEndpoint: string;   // e.g. https://resource.openai.azure.com/
+  imageApiKey: string;
+  imageDeployment: string; // e.g. dall-e-3
   wordpressUrl: string;
   wordpressUsername: string;
   wordpressAppPassword: string;

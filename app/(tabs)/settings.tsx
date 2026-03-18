@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,8 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../src/constants/colors';
 import { AppSettings } from '../../src/lib/types';
 import { getSettings, saveSettings } from '../../src/lib/storage';
+import { generateOutline, AIDebugInfo } from '../../src/lib/ai';
+import AIDebugModal from '../../src/components/AIDebugModal';
 
 interface SettingRowProps {
   label: string;
@@ -95,12 +98,19 @@ const rowStyles = StyleSheet.create({
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>({
-    anthropicApiKey: '',
+    azureEndpoint: '',
+    azureApiKey: '',
+    azureDeployment: 'claude-opus-4-6',
+    imageEndpoint: '',
+    imageApiKey: '',
+    imageDeployment: 'dall-e-3',
     wordpressUrl: '',
     wordpressUsername: '',
     wordpressAppPassword: '',
   });
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testModal, setTestModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -118,8 +128,35 @@ export default function SettingsScreen() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleTestConnection = async () => {
+    if (!settings.azureEndpoint || !settings.azureApiKey) {
+      Alert.alert('Missing Config', 'Enter an endpoint URL and API key first.');
+      return;
+    }
+    setTesting(true);
+    const config = {
+      endpoint: settings.azureEndpoint,
+      apiKey: settings.azureApiKey,
+      deployment: settings.azureDeployment || 'claude-opus-4-6',
+    };
+    const res = await generateOutline(config, 'Connection test', '');
+    setTesting(false);
+    if (res.error) {
+      setTestModal({ error: res.error, debugInfo: res.debugInfo });
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Connection OK', 'Successfully connected to Azure AI Foundry.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <AIDebugModal
+        visible={!!testModal}
+        error={testModal?.error ?? ''}
+        debugInfo={testModal?.debugInfo}
+        onClose={() => setTestModal(null)}
+      />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -134,24 +171,90 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionIcon}>⚡</Text>
-            <Text style={styles.sectionTitle}>AI — Anthropic</Text>
+            <Text style={styles.sectionTitle}>AI — Azure AI Foundry</Text>
           </View>
           <Text style={styles.sectionDesc}>
-            Nova uses Claude to help you develop article ideas. Your API key is stored locally on your device.
+            Nova uses Claude via Azure AI Foundry. Your credentials are stored locally on your device.
           </Text>
           <SettingRow
+            label="Endpoint URL"
+            value={settings.azureEndpoint}
+            onChangeText={update('azureEndpoint')}
+            placeholder="https://<resource>.services.ai.azure.com/anthropic/"
+            hint="Base URL ending in /anthropic/ — the app appends v1/messages?api-version automatically"
+          />
+          <SettingRow
             label="API Key"
-            value={settings.anthropicApiKey}
-            onChangeText={update('anthropicApiKey')}
-            placeholder="sk-ant-..."
+            value={settings.azureApiKey}
+            onChangeText={update('azureApiKey')}
+            placeholder="Your Azure AI Foundry API key"
             secure
-            hint="Get your API key at console.anthropic.com"
+            hint="Found in Azure AI Foundry → your project → Keys and Endpoints"
+          />
+          <SettingRow
+            label="Deployment Name"
+            value={settings.azureDeployment}
+            onChangeText={update('azureDeployment')}
+            placeholder="claude-opus-4-6"
+            hint="The model deployment name in your Azure AI Foundry project"
+          />
+          <View style={styles.testRow}>
+            <Pressable
+              style={[styles.testBtn, testing && styles.testBtnDisabled]}
+              onPress={handleTestConnection}
+              disabled={testing}
+            >
+              {testing ? (
+                <ActivityIndicator size="small" color={Colors.accentBright} />
+              ) : (
+                <Text style={styles.testBtnText}>Test Connection</Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.linkBtn}
+              onPress={() => Linking.openURL('https://ai.azure.com')}
+            >
+              <Text style={styles.linkText}>Open Azure AI Foundry →</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Image Generation Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionIcon}>🎨</Text>
+            <Text style={styles.sectionTitle}>Image Generation — DALL·E 3</Text>
+          </View>
+          <Text style={styles.sectionDesc}>
+            Generates AI hero images for your articles using Azure OpenAI's DALL·E 3. Requires a separate Azure OpenAI resource (different from the Claude endpoint above).
+          </Text>
+          <SettingRow
+            label="Azure OpenAI Endpoint"
+            value={settings.imageEndpoint}
+            onChangeText={update('imageEndpoint')}
+            placeholder="https://<resource>.openai.azure.com/"
+            hint="Azure OpenAI resource endpoint — ends in .openai.azure.com/"
+          />
+          <SettingRow
+            label="API Key"
+            value={settings.imageApiKey}
+            onChangeText={update('imageApiKey')}
+            placeholder="Azure OpenAI API key"
+            secure
+            hint="Found in Azure OpenAI resource → Keys and Endpoint"
+          />
+          <SettingRow
+            label="Deployment Name"
+            value={settings.imageDeployment}
+            onChangeText={update('imageDeployment')}
+            placeholder="dall-e-3"
+            hint="Your DALL·E 3 deployment name in Azure OpenAI Studio"
           />
           <Pressable
             style={styles.linkBtn}
-            onPress={() => Linking.openURL('https://console.anthropic.com')}
+            onPress={() => Linking.openURL('https://oai.azure.com')}
           >
-            <Text style={styles.linkText}>Get an API key →</Text>
+            <Text style={styles.linkText}>Open Azure OpenAI Studio →</Text>
           </Pressable>
         </View>
 
@@ -263,6 +366,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,
+  },
+  testRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  testBtn: {
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    minWidth: 130,
+    alignItems: 'center',
+  },
+  testBtnDisabled: {
+    opacity: 0.5,
+  },
+  testBtnText: {
+    color: Colors.accentBright,
+    fontSize: 13,
+    fontWeight: '600',
   },
   linkBtn: {
     alignSelf: 'flex-start',

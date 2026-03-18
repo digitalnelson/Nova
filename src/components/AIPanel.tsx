@@ -17,7 +17,15 @@ import {
   improveTitles,
   suggestTags,
   writeIntro,
+  AIDebugInfo,
 } from '../lib/ai';
+import AIDebugModal from './AIDebugModal';
+
+interface AzureConfig {
+  endpoint: string;
+  apiKey: string;
+  deployment: string;
+}
 
 interface AIActionItem {
   action: AIAction;
@@ -56,21 +64,23 @@ const AI_ACTIONS: AIActionItem[] = [
 interface AIPanelProps {
   title: string;
   notes: string;
-  apiKey: string;
+  azureConfig: AzureConfig;
   onTagsGenerated?: (tags: string[]) => void;
+  onInsertContent?: (content: string) => void;
 }
 
-export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPanelProps) {
+export default function AIPanel({ title, notes, azureConfig, onTagsGenerated, onInsertContent }: AIPanelProps) {
   const [activeAction, setActiveAction] = useState<AIAction | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string>('');
   const [resultAction, setResultAction] = useState<AIAction | null>(null);
+  const [errorModal, setErrorModal] = useState<{ error: string; debugInfo?: AIDebugInfo } | null>(null);
 
   const runAction = async (action: AIAction) => {
-    if (!apiKey) {
+    if (!azureConfig.endpoint || !azureConfig.apiKey) {
       Alert.alert(
-        'API Key Required',
-        'Add your Anthropic API key in Settings to use AI features.',
+        'Azure Configuration Required',
+        'Add your Azure AI Foundry endpoint and API key in Settings to use AI features.',
         [{ text: 'OK' }]
       );
       return;
@@ -88,23 +98,23 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
     let res;
     switch (action) {
       case 'outline':
-        res = await generateOutline(apiKey, title, notes);
+        res = await generateOutline(azureConfig, title, notes);
         break;
       case 'titles':
-        res = await improveTitles(apiKey, title, notes);
+        res = await improveTitles(azureConfig, title, notes);
         break;
       case 'tags':
-        res = await suggestTags(apiKey, title, notes);
+        res = await suggestTags(azureConfig, title, notes);
         break;
       case 'intro':
-        res = await writeIntro(apiKey, title, notes);
+        res = await writeIntro(azureConfig, title, notes);
         break;
     }
 
     setLoading(false);
 
     if (res.error) {
-      Alert.alert('AI Error', res.error);
+      setErrorModal({ error: res.error, debugInfo: res.debugInfo });
       setActiveAction(null);
       return;
     }
@@ -126,6 +136,12 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
 
   return (
     <View style={styles.container}>
+      <AIDebugModal
+        visible={!!errorModal}
+        error={errorModal?.error ?? ''}
+        debugInfo={errorModal?.debugInfo}
+        onClose={() => setErrorModal(null)}
+      />
       {/* Header */}
       <LinearGradient
         colors={[Colors.accentSoft, 'transparent']}
@@ -176,6 +192,17 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
               {AI_ACTIONS.find((a) => a.action === resultAction)?.icon}{' '}
               {AI_ACTIONS.find((a) => a.action === resultAction)?.label}
             </Text>
+            {onInsertContent && (resultAction === 'outline' || resultAction === 'intro') && (
+              <Pressable
+                style={styles.insertBtn}
+                onPress={() => {
+                  onInsertContent(result);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <Text style={styles.insertBtnText}>↙ Insert</Text>
+              </Pressable>
+            )}
           </View>
           <ScrollView
             style={styles.resultScroll}
@@ -268,6 +295,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
@@ -275,6 +305,20 @@ const styles = StyleSheet.create({
   resultLabel: {
     color: Colors.accentBright,
     fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  insertBtn: {
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  insertBtnText: {
+    color: Colors.accentBright,
+    fontSize: 12,
     fontWeight: '600',
   },
   resultScroll: {

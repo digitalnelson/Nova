@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -28,6 +28,22 @@ const STATUS_FILTERS: { label: string; value: IdeaStatus | 'all' }[] = [
   { label: 'Published', value: 'published' },
 ];
 
+function StatBadge({ value, label, accent }: { value: number; label: string; accent?: boolean }) {
+  return (
+    <View style={statStyles.badge}>
+      <Text style={[statStyles.value, accent && statStyles.valueAccent]}>{value}</Text>
+      <Text style={statStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const statStyles = StyleSheet.create({
+  badge: { alignItems: 'center', flex: 1 },
+  value: { color: Colors.textPrimary, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  valueAccent: { color: Colors.accentBright },
+  label: { color: Colors.textMuted, fontSize: 11, marginTop: 1, fontWeight: '500' },
+});
+
 export default function HomeScreen() {
   const [ideas, setIdeas] = useState<ArticleIdea[]>([]);
   const [search, setSearch] = useState('');
@@ -56,22 +72,18 @@ export default function HomeScreen() {
 
   const handleDelete = (idea: ArticleIdea) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(
-      'Delete Idea',
-      `Delete "${idea.title}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteIdea(idea.id);
-            await load();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
+    Alert.alert('Delete Idea', `Delete "${idea.title}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteIdea(idea.id);
+          await load();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const filtered = ideas.filter((idea) => {
@@ -84,6 +96,15 @@ export default function HomeScreen() {
     return matchesSearch && matchesFilter;
   });
 
+  // Stats for hero
+  const aiCount = ideas.filter(
+    (i) =>
+      i.aiContent?.outline ||
+      i.aiContent?.intro ||
+      i.aiContent?.improvedTitles?.length
+  ).length;
+  const publishedCount = ideas.filter((i) => i.status === 'published').length;
+
   const renderItem = ({ item, index }: { item: ArticleIdea; index: number }) => (
     <View style={[styles.cardWrapper, isTablet && index % 2 === 0 && styles.cardWrapperLeft]}>
       <IdeaCard
@@ -94,19 +115,37 @@ export default function HomeScreen() {
     </View>
   );
 
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.appName}>Nova</Text>
-          <Text style={styles.appSub}>
-            {ideas.length} idea{ideas.length !== 1 ? 's' : ''}
-          </Text>
+  const ListHeader = (
+    <>
+      {/* ── Hero ── */}
+      <LinearGradient
+        colors={[
+          'rgba(124, 106, 247, 0.18)',
+          'rgba(124, 106, 247, 0.06)',
+          'transparent',
+        ]}
+        style={styles.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      >
+        <View style={styles.heroTop}>
+          <View style={styles.heroTitleRow}>
+            <Text style={styles.heroStar}>✦</Text>
+            <Text style={styles.heroName}>Nova</Text>
+          </View>
+          <Text style={styles.heroTagline}>Article ideas, amplified by AI</Text>
         </View>
-      </View>
 
-      {/* Search */}
+        <View style={styles.statsRow}>
+          <StatBadge value={ideas.length} label="ideas" />
+          <View style={styles.statDivider} />
+          <StatBadge value={aiCount} label="AI enhanced" accent />
+          <View style={styles.statDivider} />
+          <StatBadge value={publishedCount} label="published" />
+        </View>
+      </LinearGradient>
+
+      {/* ── Search ── */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -126,7 +165,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Filters */}
+      {/* ── Status filters ── */}
       <FlatList
         horizontal
         data={STATUS_FILTERS}
@@ -151,24 +190,21 @@ export default function HomeScreen() {
         }}
         style={styles.filterBar}
       />
+    </>
+  );
 
-      {/* Ideas list */}
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         numColumns={numColumns}
-        key={numColumns} // re-render when numColumns changes
-        contentContainerStyle={[
-          styles.list,
-          filtered.length === 0 && styles.listEmpty,
-        ]}
+        key={numColumns}
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={[styles.list, filtered.length === 0 && styles.listEmpty]}
         renderItem={renderItem}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.accent}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
         }
         ListEmptyComponent={<EmptyState searching={!!search || filter !== 'all'} />}
         showsVerticalScrollIndicator={false}
@@ -200,25 +236,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bg,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
+  // Hero
+  hero: {
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+    marginBottom: 4,
   },
-  appName: {
+  heroTop: {
+    marginBottom: 20,
+  },
+  heroTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  heroStar: {
+    color: Colors.accent,
+    fontSize: 22,
+  },
+  heroName: {
     color: Colors.textPrimary,
-    fontSize: 34,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 40,
+    fontWeight: '900',
+    letterSpacing: -1,
+    lineHeight: 44,
   },
-  appSub: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    marginTop: 2,
+  heroTagline: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    marginLeft: 30,
   },
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 14,
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.border,
+    marginVertical: 4,
+  },
+  // Search
   searchRow: {
     paddingHorizontal: 16,
     marginBottom: 12,
@@ -234,27 +297,17 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     gap: 8,
   },
-  searchIcon: {
-    fontSize: 16,
-  },
+  searchIcon: { fontSize: 16 },
   searchInput: {
     flex: 1,
     color: Colors.textPrimary,
     fontSize: 15,
     padding: 0,
   },
-  clearBtn: {
-    color: Colors.textMuted,
-    fontSize: 14,
-  },
-  filterBar: {
-    flexGrow: 0,
-    marginBottom: 12,
-  },
-  filterList: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
+  clearBtn: { color: Colors.textMuted, fontSize: 14 },
+  // Filters
+  filterBar: { flexGrow: 0, marginBottom: 12 },
+  filterList: { paddingHorizontal: 16, gap: 8 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -267,36 +320,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentSoft,
     borderColor: Colors.accent,
   },
-  filterLabel: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  filterLabelActive: {
-    color: Colors.accentBright,
-    fontWeight: '600',
-  },
-  list: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-  },
-  listEmpty: {
-    flex: 1,
-  },
-  cardWrapper: {
-    flex: 1,
-  },
-  cardWrapperLeft: {
-    marginRight: 6,
-  },
+  filterLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  filterLabelActive: { color: Colors.accentBright, fontWeight: '600' },
+  // List
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  listEmpty: { flex: 1 },
+  cardWrapper: { flex: 1 },
+  cardWrapperLeft: { marginRight: 6 },
+  // FAB
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 30,
     shadowColor: Colors.accent,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
     elevation: 8,
   },
   fabGradient: {
