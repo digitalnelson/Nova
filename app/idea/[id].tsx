@@ -24,7 +24,7 @@ import {
   TenTapStartKit,
 } from '@10play/tentap-editor';
 import { Colors, StatusColors, StatusLabels } from '../../src/constants/colors';
-import { ArticleIdea, IdeaStatus } from '../../src/lib/types';
+import { ArticleIdea, IdeaStatus, Revision } from '../../src/lib/types';
 import { getIdeas, saveIdea, deleteIdea } from '../../src/lib/storage';
 import { getSettings } from '../../src/lib/storage';
 import TagPill from '../../src/components/TagPill';
@@ -35,6 +35,20 @@ import WritingBuddy from '../../src/components/WritingBuddy';
 import { createLogger, initLogger } from '../../src/lib/logger';
 
 const log = createLogger('[IdeaScreen]');
+
+const MAX_REVISIONS = 10;
+const AUTO_SAVE_MS = 30_000; // 30 seconds of inactivity before auto-save
+
+function formatRevisionTime(iso: string): string {
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 
 // ─── Editor CSS ──────────────────────────────────────────────────────────────
 const EDITOR_CSS = `
@@ -215,10 +229,16 @@ export default function IdeaDetailScreen() {
   const [imageConfig, setImageConfig] = useState({ endpoint: '', apiKey: '', deployment: 'dall-e-3' });
   const [heroImageDataUri, setHeroImageDataUri] = useState<string | undefined>(undefined);
   const [htmlContent, setHtmlContent] = useState('');
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const cssInjected = useRef(false);
   const contentSetInEditor = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref always points to the latest handleAutoSave so the debounce timer
+  // fires with current state regardless of when it was scheduled
+  const handleAutoSaveRef = useRef<() => Promise<void>>(async () => {});
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
@@ -243,12 +263,25 @@ export default function IdeaDetailScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
+  // Clean up auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
+
   const editor = useEditorBridge({
     autofocus: true,
     dynamicHeight: false,
     theme: TOOLBAR_THEME,
     onChange: () => {
       setIsDirty(true);
+      // Debounce auto-save: reset timer on every edit so it fires 30 s
+      // after the last keystroke, not the first
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => {
+        handleAutoSaveRef.current();
+      }, AUTO_SAVE_MS);
     },
   });
 
@@ -279,6 +312,7 @@ export default function IdeaDetailScreen() {
           setTags(found.tags);
           setStatus(found.status);
           setHeroImageDataUri(found.heroImageDataUri);
+          setRevisions(found.revisions || []);
           const initial = found.content || '';
           setHtmlContent(initial);
           log.debug('Idea state populated. Content length:', initial.length);
@@ -341,6 +375,47 @@ export default function IdeaDetailScreen() {
 
   const markDirty = () => setIsDirty(true);
 
+  // Keep handleAutoSaveRef pointing at the latest closure so the debounce
+  // timer always has access to current state when it fires
+  useEffect(() => {
+    handleAutoSaveRef.current = handleAutoSave;
+  });
+
+  async function handleAutoSave() {
+    if (!idea || !title.trim()) return;
+    try {
+      const content = await editor.getHTML();
+      const cleanContent = content === '<p></p>' ? '' : content;
+      const rev: Revision = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        source: 'user',
+        label: 'Auto-save',
+        content: cleanContent,
+      };
+      const newRevisions = [rev, ...revisions].slice(0, MAX_REVISIONS);
+      const updated: ArticleIdea = {
+        ...idea,
+        title: title.trim(),
+        notes: notes.trim(),
+        content: cleanContent,
+        heroImageDataUri,
+        tags,
+        status,
+        revisions: newRevisions,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveIdea(updated);
+      setIdea(updated);
+      setHtmlContent(cleanContent);
+      setRevisions(newRevisions);
+      setIsDirty(false);
+      log.info('Auto-saved');
+    } catch (e: unknown) {
+      log.error('Auto-save failed:', e instanceof Error ? e.message : String(e));
+    }
+  }
+
   const handleSave = async () => {
     if (!idea) return;
     if (!title.trim()) {
@@ -353,6 +428,15 @@ export default function IdeaDetailScreen() {
       const cleanContent = content === '<p></p>' ? '' : content;
       log.debug('Got HTML from editor, length:', cleanContent.length);
 
+      const rev: Revision = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        source: 'user',
+        label: 'Saved',
+        content: cleanContent,
+      };
+      const newRevisions = [rev, ...revisions].slice(0, MAX_REVISIONS);
+
       const updated: ArticleIdea = {
         ...idea,
         title: title.trim(),
@@ -361,13 +445,20 @@ export default function IdeaDetailScreen() {
         heroImageDataUri,
         tags,
         status,
+        revisions: newRevisions,
         updatedAt: new Date().toISOString(),
       };
       await saveIdea(updated);
       log.info('Idea saved successfully');
       setIdea(updated);
       setHtmlContent(cleanContent);
+      setRevisions(newRevisions);
       setIsDirty(false);
+      // Manual save cancels any pending auto-save
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -426,8 +517,21 @@ export default function IdeaDetailScreen() {
     setTimeout(() => editor.focus('end'), 100);
   };
 
-  const handleCollaboratorApply = (newHtml: string) => {
-    log.debug('Applying collaborator changes, length:', newHtml.length);
+  const handleCollaboratorApply = async (newHtml: string, label: string) => {
+    log.debug('Applying AI changes (%s), length: %d', label, newHtml.length);
+    // Snapshot current content so the user can always undo this AI edit
+    const currentContent = await editor.getHTML();
+    const cleanCurrent = currentContent === '<p></p>' ? '' : currentContent;
+    if (cleanCurrent) {
+      const preRev: Revision = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        source: 'user',
+        label: `Before: ${label}`,
+        content: cleanCurrent,
+      };
+      setRevisions(prev => [preRev, ...prev].slice(0, MAX_REVISIONS));
+    }
     editor.setContent(newHtml);
     markDirty();
   };
@@ -663,6 +767,11 @@ export default function IdeaDetailScreen() {
               <Text style={styles.keyboardDismissText}>Done</Text>
             </Pressable>
           )}
+          {revisions.length > 0 && !editorState.isFocused && (
+            <Pressable style={styles.historyBtn} onPress={() => setShowHistory(true)}>
+              <Text style={styles.historyBtnText}>History</Text>
+            </Pressable>
+          )}
           {isDirty && (
             <Pressable style={styles.saveBtn} onPress={handleSave}>
               <LinearGradient
@@ -729,6 +838,66 @@ export default function IdeaDetailScreen() {
           onReplaceContent={handleCollaboratorApply}
         />
       )}
+
+      {/* Revision History Sheet */}
+      <Modal
+        visible={showHistory}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowHistory(false)}
+      >
+        <View style={styles.historyModal}>
+          <View style={styles.historyModalHeader}>
+            <Text style={styles.historyModalTitle}>Revision History</Text>
+            <Pressable style={styles.historyCloseBtn} onPress={() => setShowHistory(false)}>
+              <Text style={styles.historyCloseBtnText}>Done</Text>
+            </Pressable>
+          </View>
+
+          {revisions.length === 0 ? (
+            <View style={styles.historyEmpty}>
+              <Text style={styles.historyEmptyText}>No revisions yet</Text>
+              <Text style={styles.historyEmptySub}>
+                Saves and AI edits are recorded here automatically.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.historyScroll}
+              contentContainerStyle={styles.historyList}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.historyHint}>
+                Tap Restore to revert the editor to any saved version.
+              </Text>
+              {revisions.map((rev) => (
+                <View key={rev.id} style={styles.revRow}>
+                  <View style={[styles.revBadge, rev.source === 'ai' && styles.revBadgeAI]}>
+                    <Text style={styles.revBadgeText}>
+                      {rev.source === 'ai' ? 'AI' : 'You'}
+                    </Text>
+                  </View>
+                  <View style={styles.revInfo}>
+                    <Text style={styles.revLabel}>{rev.label}</Text>
+                    <Text style={styles.revTime}>{formatRevisionTime(rev.timestamp)}</Text>
+                  </View>
+                  <Pressable
+                    style={styles.revRestoreBtn}
+                    onPress={() => {
+                      editor.setContent(rev.content);
+                      markDirty();
+                      setShowHistory(false);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    }}
+                  >
+                    <Text style={styles.revRestoreText}>Restore</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1042,6 +1211,128 @@ const styles = StyleSheet.create({
   deleteText: {
     color: Colors.danger,
     fontSize: 15,
+    fontWeight: '600',
+  },
+  // History button (nav bar)
+  historyBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  historyBtnText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+  },
+  // Revision history modal
+  historyModal: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+  },
+  historyModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  historyModalTitle: {
+    color: Colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  historyCloseBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  historyCloseBtnText: {
+    color: Colors.accent,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  historyEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 40,
+  },
+  historyEmptyText: {
+    color: Colors.textSecondary,
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  historyEmptySub: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  historyScroll: {
+    flex: 1,
+  },
+  historyList: {
+    padding: 16,
+    gap: 8,
+  },
+  historyHint: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  revRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+  },
+  revBadge: {
+    backgroundColor: Colors.elevated,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  revBadgeAI: {
+    backgroundColor: Colors.accentSoft,
+    borderColor: Colors.accent,
+  },
+  revBadgeText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  revInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  revLabel: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  revTime: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
+  revRestoreBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.elevated,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  revRestoreText: {
+    color: Colors.accent,
+    fontSize: 13,
     fontWeight: '600',
   },
   // Toolbar wrapper — sits outside the main KAV so it uses its own
