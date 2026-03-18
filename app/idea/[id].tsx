@@ -30,6 +30,9 @@ import TagPill from '../../src/components/TagPill';
 import AIPanel from '../../src/components/AIPanel';
 import HeroImagePanel from '../../src/components/HeroImagePanel';
 import AICollaborator from '../../src/components/AICollaborator';
+import { createLogger, initLogger } from '../../src/lib/logger';
+
+const log = createLogger('[IdeaScreen]');
 
 // ─── Editor CSS ──────────────────────────────────────────────────────────────
 const EDITOR_CSS = `
@@ -200,6 +203,7 @@ const STATUSES: IdeaStatus[] = ['draft', 'outlined', 'in-progress', 'published']
 export default function IdeaDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [idea, setIdea] = useState<ArticleIdea | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -215,8 +219,15 @@ export default function IdeaDetailScreen() {
   const [heroImageDataUri, setHeroImageDataUri] = useState<string | undefined>(undefined);
   const [htmlContent, setHtmlContent] = useState('');
   const cssInjected = useRef(false);
+  const contentSetInEditor = useRef(false);
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
+
+  // Initialise logger on mount
+  useEffect(() => {
+    initLogger();
+    log.info('Screen mounted, id:', id);
+  }, []);
 
   const editor = useEditorBridge({
     autofocus: false,
@@ -229,50 +240,87 @@ export default function IdeaDetailScreen() {
 
   const editorState = useBridgeState(editor);
 
-  // Inject dark CSS + placeholder once editor is ready
+  // ── Phase 1: Load idea data from storage immediately, independent of editor ──
   useEffect(() => {
+    if (!id) {
+      log.error('No id param — cannot load idea');
+      setLoadError('No idea ID provided.');
+      return;
+    }
+
+    log.info('Starting data load for id:', id);
+
+    async function loadData() {
+      try {
+        log.debug('Fetching all ideas from AsyncStorage...');
+        const all = await getIdeas();
+        log.info('Fetched', all.length, 'total ideas from storage');
+
+        const found = all.find((i) => i.id === id);
+        if (found) {
+          log.info('Found idea:', JSON.stringify({ id: found.id, title: found.title, status: found.status, contentLength: (found.content || '').length }));
+          setIdea(found);
+          setTitle(found.title);
+          setNotes(found.notes);
+          setTags(found.tags);
+          setStatus(found.status);
+          setHeroImageDataUri(found.heroImageDataUri);
+          const initial = found.content || '';
+          setHtmlContent(initial);
+          log.debug('Idea state populated. Content length:', initial.length);
+        } else {
+          log.error('Idea not found for id:', id, '— available ids:', all.map((i) => i.id).join(', '));
+          setLoadError(`Idea "${id}" not found in storage.`);
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.error('Exception while loading ideas:', msg);
+        setLoadError('Failed to load idea: ' + msg);
+      }
+
+      try {
+        log.debug('Fetching settings from AsyncStorage...');
+        const settings = await getSettings();
+        log.info('Settings loaded — endpoint:', settings.azureEndpoint ? settings.azureEndpoint.replace(/\/+$/, '').split('/').slice(-1)[0] + '/...' : '(empty)', '| deployment:', settings.azureDeployment || '(empty)');
+        setAzureConfig({
+          endpoint: settings.azureEndpoint,
+          apiKey: settings.azureApiKey,
+          deployment: settings.azureDeployment,
+        });
+        setImageConfig({
+          endpoint: settings.imageEndpoint || '',
+          apiKey: settings.imageApiKey || '',
+          deployment: settings.imageDeployment || 'dall-e-3',
+        });
+        log.debug('Azure config set. Image endpoint:', settings.imageEndpoint ? 'set' : '(empty)');
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.error('Exception while loading settings:', msg);
+      }
+    }
+
+    loadData();
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Phase 2: Track editor readiness and inject CSS ────────────────────────
+  useEffect(() => {
+    log.debug('editorState.isReady changed:', editorState.isReady);
     if (editorState.isReady && !cssInjected.current) {
       cssInjected.current = true;
+      log.info('Editor became ready — injecting CSS and placeholder');
       editor.injectCSS(EDITOR_CSS, 'nova-theme');
       editor.setPlaceholder('Start writing your article…');
     }
   }, [editorState.isReady, editor]);
 
-  const load = useCallback(async () => {
-    const all = await getIdeas();
-    const found = all.find((i) => i.id === id);
-    if (found) {
-      setIdea(found);
-      setTitle(found.title);
-      setNotes(found.notes);
-      setTags(found.tags);
-      setStatus(found.status);
-      setHeroImageDataUri(found.heroImageDataUri);
-      const initial = found.content || '';
-      setHtmlContent(initial);
-      if (initial) {
-        editor.setContent(initial);
-      }
-    }
-    const settings = await getSettings();
-    setAzureConfig({
-      endpoint: settings.azureEndpoint,
-      apiKey: settings.azureApiKey,
-      deployment: settings.azureDeployment,
-    });
-    setImageConfig({
-      endpoint: settings.imageEndpoint || '',
-      apiKey: settings.imageApiKey || '',
-      deployment: settings.imageDeployment || 'dall-e-3',
-    });
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Load once editor is ready so setContent works
+  // ── Phase 3: Once both idea data AND editor are ready, set content ─────────
   useEffect(() => {
-    if (editorState.isReady) {
-      load();
+    if (editorState.isReady && htmlContent && !contentSetInEditor.current) {
+      contentSetInEditor.current = true;
+      log.info('Setting initial content in editor — length:', htmlContent.length);
+      editor.setContent(htmlContent);
     }
-  }, [editorState.isReady, load]);
+  }, [editorState.isReady, htmlContent, editor]);
 
   const markDirty = () => setIsDirty(true);
 
@@ -282,24 +330,33 @@ export default function IdeaDetailScreen() {
       Alert.alert('Title required', 'Please add a title.');
       return;
     }
-    const content = await editor.getHTML();
-    const cleanContent = content === '<p></p>' ? '' : content;
+    log.info('Saving idea:', idea.id);
+    try {
+      const content = await editor.getHTML();
+      const cleanContent = content === '<p></p>' ? '' : content;
+      log.debug('Got HTML from editor, length:', cleanContent.length);
 
-    const updated: ArticleIdea = {
-      ...idea,
-      title: title.trim(),
-      notes: notes.trim(),
-      content: cleanContent,
-      heroImageDataUri,
-      tags,
-      status,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveIdea(updated);
-    setIdea(updated);
-    setHtmlContent(cleanContent);
-    setIsDirty(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const updated: ArticleIdea = {
+        ...idea,
+        title: title.trim(),
+        notes: notes.trim(),
+        content: cleanContent,
+        heroImageDataUri,
+        tags,
+        status,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveIdea(updated);
+      log.info('Idea saved successfully');
+      setIdea(updated);
+      setHtmlContent(cleanContent);
+      setIsDirty(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('Save failed:', msg);
+      Alert.alert('Save Failed', msg);
+    }
   };
 
   const handleDelete = () => {
@@ -309,7 +366,10 @@ export default function IdeaDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          if (idea) await deleteIdea(idea.id);
+          if (idea) {
+            log.info('Deleting idea:', idea.id);
+            await deleteIdea(idea.id);
+          }
           router.back();
         },
       },
@@ -326,6 +386,7 @@ export default function IdeaDetailScreen() {
   };
 
   const handleAITagsGenerated = (suggested: string[]) => {
+    log.debug('AI tags generated:', suggested.join(', '));
     setTags((prev) => {
       const merged = [...prev];
       for (const tag of suggested) {
@@ -337,6 +398,7 @@ export default function IdeaDetailScreen() {
   };
 
   const handleInsertContent = async (markdownText: string) => {
+    log.debug('Inserting AI content, length:', markdownText.length);
     const current = await editor.getHTML();
     const isEmpty = !current || current === '<p></p>';
     const newHtml = mdToHtml(markdownText);
@@ -347,20 +409,45 @@ export default function IdeaDetailScreen() {
   };
 
   const handleCollaboratorApply = (newHtml: string) => {
+    log.debug('Applying collaborator changes, length:', newHtml.length);
     editor.setContent(newHtml);
     markDirty();
   };
 
   const handleHeroImageGenerated = (dataUri: string) => {
+    log.info('Hero image generated, dataUri length:', dataUri.length);
     setHeroImageDataUri(dataUri);
     markDirty();
   };
 
+  // ── Loading / error states ─────────────────────────────────────────────────
+  if (loadError) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.navBar}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadErrorText}>Failed to load idea</Text>
+          <Text style={styles.loadErrorDetail}>{loadError}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!idea) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <View style={styles.navBar}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
+        </View>
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading…</Text>
+          <Text style={styles.loadingSubtext}>Fetching idea from storage</Text>
         </View>
       </SafeAreaView>
     );
@@ -671,9 +758,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   loadingText: {
     color: Colors.textMuted,
+    fontSize: 16,
+  },
+  loadingSubtext: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  loadErrorText: {
+    color: Colors.danger ?? '#FF6B6B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadErrorDetail: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
   navBar: {
     flexDirection: 'row',
