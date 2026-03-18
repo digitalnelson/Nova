@@ -9,6 +9,7 @@ import {
   Alert,
   useWindowDimensions,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -318,22 +319,22 @@ export default function IdeaDetailScreen() {
     loadData();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Phase 2: Track editor readiness and inject CSS ────────────────────────
+  // ── When editor is ready: inject CSS and set content in one pass ─────────
+  // Combining these into a single effect avoids an extra render cycle between
+  // CSS injection and content being set, so text appears as fast as possible.
   useEffect(() => {
-    log.debug('editorState.isReady changed:', editorState.isReady);
-    if (editorState.isReady && !cssInjected.current) {
+    if (!editorState.isReady) return;
+
+    if (!cssInjected.current) {
       cssInjected.current = true;
-      log.info('Editor became ready — injecting CSS and placeholder');
+      log.info('Editor ready — injecting CSS');
       editor.injectCSS(EDITOR_CSS, 'nova-theme');
       editor.setPlaceholder('Start writing your article…');
     }
-  }, [editorState.isReady, editor]);
 
-  // ── Phase 3: Once both idea data AND editor are ready, set content ─────────
-  useEffect(() => {
-    if (editorState.isReady && htmlContent && !contentSetInEditor.current) {
+    if (htmlContent && !contentSetInEditor.current) {
       contentSetInEditor.current = true;
-      log.info('Setting initial content in editor — length:', htmlContent.length);
+      log.info('Setting initial content — length:', htmlContent.length);
       editor.setContent(htmlContent);
     }
   }, [editorState.isReady, htmlContent, editor]);
@@ -620,10 +621,7 @@ export default function IdeaDetailScreen() {
   const mainContent = (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={[
-        styles.scrollContent,
-        keyboardVisible && { paddingBottom: keyboardHeight + 56 },
-      ]}
+      contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -680,7 +678,10 @@ export default function IdeaDetailScreen() {
         </View>
       </View>
 
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
         {isTablet ? (
           <View style={styles.tabletRow}>
             <View style={styles.tabletMain}>{mainContent}</View>
@@ -707,7 +708,7 @@ export default function IdeaDetailScreen() {
           mainContent
         )}
         <Toolbar editor={editor} />
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Writing Buddy FAB — mobile only */}
       {!isTablet && (
