@@ -109,6 +109,7 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
       return;
     }
 
+    setActiveAction(null);
     setResult(res.content);
     setResultAction(action);
 
@@ -152,11 +153,13 @@ export default function AIPanel({ title, notes, apiKey, onTagsGenerated }: AIPan
               onPress={() => runAction(item.action)}
               disabled={loading}
             >
-              {isLoading ? (
-                <ActivityIndicator color={Colors.accent} size="small" />
-              ) : (
-                <Text style={styles.actionIcon}>{item.icon}</Text>
-              )}
+              <View style={styles.actionIconContainer}>
+                {isLoading ? (
+                  <ActivityIndicator color={Colors.accent} size="small" />
+                ) : (
+                  <Text style={styles.actionIcon}>{item.icon}</Text>
+                )}
+              </View>
               <View style={styles.actionText}>
                 <Text style={[styles.actionLabel, isActive && styles.actionLabelActive]}>
                   {item.label}
@@ -237,9 +240,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent,
     backgroundColor: Colors.accentSoft,
   },
+  actionIconContainer: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionIcon: {
     fontSize: 20,
-    width: 28,
     textAlign: 'center',
   },
   actionText: {
