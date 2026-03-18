@@ -101,6 +101,9 @@ export default function SettingsScreen() {
     azureEndpoint: '',
     azureApiKey: '',
     azureDeployment: 'claude-opus-4-6',
+    imageEndpoint: '',
+    imageApiKey: '',
+    imageDeployment: 'dall-e-3',
     wordpressUrl: '',
     wordpressUsername: '',
     wordpressAppPassword: '',
@@ -214,6 +217,45 @@ export default function SettingsScreen() {
               <Text style={styles.linkText}>Open Azure AI Foundry →</Text>
             </Pressable>
           </View>
+        </View>
+
+        {/* Image Generation Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionIcon}>🎨</Text>
+            <Text style={styles.sectionTitle}>Image Generation — DALL·E 3</Text>
+          </View>
+          <Text style={styles.sectionDesc}>
+            Generates AI hero images for your articles using Azure OpenAI's DALL·E 3. Requires a separate Azure OpenAI resource (different from the Claude endpoint above).
+          </Text>
+          <SettingRow
+            label="Azure OpenAI Endpoint"
+            value={settings.imageEndpoint}
+            onChangeText={update('imageEndpoint')}
+            placeholder="https://<resource>.openai.azure.com/"
+            hint="Azure OpenAI resource endpoint — ends in .openai.azure.com/"
+          />
+          <SettingRow
+            label="API Key"
+            value={settings.imageApiKey}
+            onChangeText={update('imageApiKey')}
+            placeholder="Azure OpenAI API key"
+            secure
+            hint="Found in Azure OpenAI resource → Keys and Endpoint"
+          />
+          <SettingRow
+            label="Deployment Name"
+            value={settings.imageDeployment}
+            onChangeText={update('imageDeployment')}
+            placeholder="dall-e-3"
+            hint="Your DALL·E 3 deployment name in Azure OpenAI Studio"
+          />
+          <Pressable
+            style={styles.linkBtn}
+            onPress={() => Linking.openURL('https://oai.azure.com')}
+          >
+            <Text style={styles.linkText}>Open Azure OpenAI Studio →</Text>
+          </Pressable>
         </View>
 
         {/* WordPress Section */}

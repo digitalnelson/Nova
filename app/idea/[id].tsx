@@ -28,6 +28,8 @@ import { getIdeas, saveIdea, deleteIdea } from '../../src/lib/storage';
 import { getSettings } from '../../src/lib/storage';
 import TagPill from '../../src/components/TagPill';
 import AIPanel from '../../src/components/AIPanel';
+import HeroImagePanel from '../../src/components/HeroImagePanel';
+import AICollaborator from '../../src/components/AICollaborator';
 
 // ─── Editor CSS ──────────────────────────────────────────────────────────────
 const EDITOR_CSS = `
@@ -205,9 +207,12 @@ export default function IdeaDetailScreen() {
   const [tagInput, setTagInput] = useState('');
   const [showDetails, setShowDetails] = useState(false);
   const [showAI, setShowAI] = useState(false);
+  const [showCollaborator, setShowCollaborator] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [azureConfig, setAzureConfig] = useState({ endpoint: '', apiKey: '', deployment: '' });
+  const [imageConfig, setImageConfig] = useState({ endpoint: '', apiKey: '', deployment: 'dall-e-3' });
+  const [heroImageDataUri, setHeroImageDataUri] = useState<string | undefined>(undefined);
   const [htmlContent, setHtmlContent] = useState('');
   const cssInjected = useRef(false);
   const { width } = useWindowDimensions();
@@ -242,6 +247,7 @@ export default function IdeaDetailScreen() {
       setNotes(found.notes);
       setTags(found.tags);
       setStatus(found.status);
+      setHeroImageDataUri(found.heroImageDataUri);
       const initial = found.content || '';
       setHtmlContent(initial);
       if (initial) {
@@ -253,6 +259,11 @@ export default function IdeaDetailScreen() {
       endpoint: settings.azureEndpoint,
       apiKey: settings.azureApiKey,
       deployment: settings.azureDeployment,
+    });
+    setImageConfig({
+      endpoint: settings.imageEndpoint || '',
+      apiKey: settings.imageApiKey || '',
+      deployment: settings.imageDeployment || 'dall-e-3',
     });
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -279,6 +290,7 @@ export default function IdeaDetailScreen() {
       title: title.trim(),
       notes: notes.trim(),
       content: cleanContent,
+      heroImageDataUri,
       tags,
       status,
       updatedAt: new Date().toISOString(),
@@ -331,8 +343,17 @@ export default function IdeaDetailScreen() {
     editor.setContent(isEmpty ? newHtml : current + newHtml);
     markDirty();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    // Scroll/focus the editor after insert
     setTimeout(() => editor.focus('end'), 100);
+  };
+
+  const handleCollaboratorApply = (newHtml: string) => {
+    editor.setContent(newHtml);
+    markDirty();
+  };
+
+  const handleHeroImageGenerated = (dataUri: string) => {
+    setHeroImageDataUri(dataUri);
+    markDirty();
   };
 
   if (!idea) {
@@ -351,8 +372,18 @@ export default function IdeaDetailScreen() {
 
   const editorSection = (
     <>
+      {/* Hero image */}
+      <HeroImagePanel
+        title={title}
+        notes={notes}
+        claudeConfig={azureConfig}
+        imageConfig={imageConfig}
+        currentDataUri={heroImageDataUri}
+        onImageGenerated={handleHeroImageGenerated}
+      />
+
       {/* Article section header */}
-      <View style={styles.sectionHeader}>
+      <View style={[styles.sectionHeader, { marginTop: 12 }]}>
         <Text style={styles.sectionHeaderText}>ARTICLE</Text>
         {words > 0 && (
           <View style={styles.wordCountBadge}>
@@ -483,6 +514,7 @@ export default function IdeaDetailScreen() {
 
   const aiSection = (
     <>
+      {/* AI Tools (outline, intro, tags, titles) */}
       <Pressable
         style={[styles.sectionToggle, showAI && styles.sectionToggleOpen]}
         onPress={() => {
@@ -505,6 +537,33 @@ export default function IdeaDetailScreen() {
             azureConfig={azureConfig}
             onTagsGenerated={handleAITagsGenerated}
             onInsertContent={handleInsertContent}
+          />
+        </View>
+      )}
+
+      {/* AI Collaborator (revise + improve article) */}
+      <Pressable
+        style={[styles.sectionToggle, showCollaborator && styles.sectionToggleOpen]}
+        onPress={() => {
+          setShowCollaborator((v) => !v);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }}
+      >
+        <Text style={styles.sectionToggleIcon}>🤝</Text>
+        <Text style={[styles.sectionToggleText, showCollaborator && styles.sectionToggleTextOpen]}>
+          AI Collaborator
+        </Text>
+        <Text style={styles.sectionChevron}>{showCollaborator ? '▲' : '▼'}</Text>
+      </Pressable>
+
+      {showCollaborator && (
+        <View style={styles.aiPanelWrapper}>
+          <AICollaborator
+            title={title}
+            notes={notes}
+            azureConfig={azureConfig}
+            getArticleHtml={() => editor.getHTML()}
+            onApplyChanges={handleCollaboratorApply}
           />
         </View>
       )}
@@ -582,6 +641,14 @@ export default function IdeaDetailScreen() {
                 azureConfig={azureConfig}
                 onTagsGenerated={handleAITagsGenerated}
                 onInsertContent={handleInsertContent}
+              />
+              <Text style={[styles.sideHeader, { marginTop: 20 }]}>AI Collaborator</Text>
+              <AICollaborator
+                title={title}
+                notes={notes}
+                azureConfig={azureConfig}
+                getArticleHtml={() => editor.getHTML()}
+                onApplyChanges={handleCollaboratorApply}
               />
             </View>
           </View>
