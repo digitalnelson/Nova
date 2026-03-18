@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  Platform,
   Alert,
   useWindowDimensions,
 } from 'react-native';
@@ -29,6 +28,7 @@ import TagPill from '../../src/components/TagPill';
 import AIPanel from '../../src/components/AIPanel';
 import HeroImagePanel from '../../src/components/HeroImagePanel';
 import AICollaborator from '../../src/components/AICollaborator';
+import WritingBuddy from '../../src/components/WritingBuddy';
 import { createLogger, initLogger } from '../../src/lib/logger';
 
 const log = createLogger('[IdeaScreen]');
@@ -209,8 +209,6 @@ export default function IdeaDetailScreen() {
   const [status, setStatus] = useState<IdeaStatus>('draft');
   const [tagInput, setTagInput] = useState('');
   const [showDetails, setShowDetails] = useState(false);
-  const [showAI, setShowAI] = useState(false);
-  const [showCollaborator, setShowCollaborator] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [azureConfig, setAzureConfig] = useState({ endpoint: '', apiKey: '', deployment: '' });
@@ -396,14 +394,15 @@ export default function IdeaDetailScreen() {
     markDirty();
   };
 
-  const handleInsertContent = async (markdownText: string) => {
-    log.debug('Inserting AI content, length:', markdownText.length);
+  const handleInsertContent = async (markdownOrHtml: string) => {
+    log.debug('Inserting AI content, length:', markdownOrHtml.length);
     const current = await editor.getHTML();
     const isEmpty = !current || current === '<p></p>';
-    const newHtml = mdToHtml(markdownText);
+    // If it looks like HTML (from buddy), use as-is; otherwise convert markdown
+    const isHtml = /^<[a-z]/.test(markdownOrHtml.trim());
+    const newHtml = isHtml ? markdownOrHtml : mdToHtml(markdownOrHtml);
     editor.setContent(isEmpty ? newHtml : current + newHtml);
     markDirty();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => editor.focus('end'), 100);
   };
 
@@ -458,7 +457,7 @@ export default function IdeaDetailScreen() {
 
   const editorSection = (
     <>
-      {/* Hero image */}
+      {/* Hero image — compact strip on mobile, full panel on tablet */}
       <HeroImagePanel
         title={title}
         notes={notes}
@@ -466,6 +465,7 @@ export default function IdeaDetailScreen() {
         imageConfig={imageConfig}
         currentDataUri={heroImageDataUri}
         onImageGenerated={handleHeroImageGenerated}
+        compact={!isTablet}
       />
 
       {/* Article section header */}
@@ -598,64 +598,6 @@ export default function IdeaDetailScreen() {
     </>
   );
 
-  const aiSection = (
-    <>
-      {/* AI Tools (outline, intro, tags, titles) */}
-      <Pressable
-        style={[styles.sectionToggle, showAI && styles.sectionToggleOpen]}
-        onPress={() => {
-          setShowAI((v) => !v);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }}
-      >
-        <Text style={styles.sectionToggleIcon}>⚡</Text>
-        <Text style={[styles.sectionToggleText, showAI && styles.sectionToggleTextOpen]}>
-          AI Tools
-        </Text>
-        <Text style={styles.sectionChevron}>{showAI ? '▲' : '▼'}</Text>
-      </Pressable>
-
-      {showAI && (
-        <View style={styles.aiPanelWrapper}>
-          <AIPanel
-            title={title}
-            notes={notes}
-            azureConfig={azureConfig}
-            onTagsGenerated={handleAITagsGenerated}
-            onInsertContent={handleInsertContent}
-          />
-        </View>
-      )}
-
-      {/* AI Collaborator (revise + improve article) */}
-      <Pressable
-        style={[styles.sectionToggle, showCollaborator && styles.sectionToggleOpen]}
-        onPress={() => {
-          setShowCollaborator((v) => !v);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }}
-      >
-        <Text style={styles.sectionToggleIcon}>🤝</Text>
-        <Text style={[styles.sectionToggleText, showCollaborator && styles.sectionToggleTextOpen]}>
-          AI Collaborator
-        </Text>
-        <Text style={styles.sectionChevron}>{showCollaborator ? '▲' : '▼'}</Text>
-      </Pressable>
-
-      {showCollaborator && (
-        <View style={styles.aiPanelWrapper}>
-          <AICollaborator
-            title={title}
-            notes={notes}
-            azureConfig={azureConfig}
-            getArticleHtml={() => editor.getHTML()}
-            onApplyChanges={handleCollaboratorApply}
-          />
-        </View>
-      )}
-    </>
-  );
-
   const mainContent = (
     <ScrollView
       style={styles.scroll}
@@ -677,7 +619,6 @@ export default function IdeaDetailScreen() {
 
       <View style={styles.metaSections}>
         {detailsSection}
-        {aiSection}
       </View>
 
       {/* Danger zone */}
@@ -740,6 +681,18 @@ export default function IdeaDetailScreen() {
         )}
         <Toolbar editor={editor} />
       </View>
+
+      {/* Writing Buddy FAB — mobile only */}
+      {!isTablet && (
+        <WritingBuddy
+          title={title}
+          notes={notes}
+          azureConfig={azureConfig}
+          getArticleHtml={() => editor.getHTML()}
+          onInsertContent={handleInsertContent}
+          onReplaceContent={handleCollaboratorApply}
+        />
+      )}
     </SafeAreaView>
   );
 }
