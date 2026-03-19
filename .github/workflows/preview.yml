@@ -3,10 +3,7 @@ name: EAS Preview Update
 on:
   push:
     branches:
-      - claude/article-ideas-react-native-puYVn
-      - claude/fix-editor-view-vIaRX
-      - main
-      - master
+      - '**'
 
 jobs:
   update:
