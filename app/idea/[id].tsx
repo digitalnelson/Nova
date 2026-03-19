@@ -385,7 +385,7 @@ export default function IdeaDetailScreen() {
   async function handleAutoSave() {
     if (!idea || !title.trim()) return;
     try {
-      const content = await editor.getHTML();
+      const content = await getHtmlSafe();
       const cleanContent = content === '<p></p>' ? '' : content;
       const rev: Revision = {
         id: Date.now().toString(),
@@ -425,7 +425,7 @@ export default function IdeaDetailScreen() {
     }
     log.info('Saving idea:', idea.id);
     try {
-      const content = await editor.getHTML();
+      const content = await getHtmlSafe();
       const cleanContent = content === '<p></p>' ? '' : content;
       log.debug('Got HTML from editor, length:', cleanContent.length);
 
@@ -506,9 +506,18 @@ export default function IdeaDetailScreen() {
     markDirty();
   };
 
+  // Wraps editor.getHTML() with a 4 s timeout so a stale WebView bridge
+  // can't leave AI operations spinning forever.
+  const getHtmlSafe = useCallback(async (): Promise<string> => {
+    return Promise.race([
+      editor.getHTML(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(htmlContent), 4000)),
+    ]);
+  }, [editor, htmlContent]);
+
   const handleInsertContent = async (markdownOrHtml: string) => {
     log.debug('Inserting AI content, length:', markdownOrHtml.length);
-    const current = await editor.getHTML();
+    const current = await getHtmlSafe();
     const isEmpty = !current || current === '<p></p>';
     // If it looks like HTML (from buddy), use as-is; otherwise convert markdown
     const isHtml = /^<[a-z]/.test(markdownOrHtml.trim());
@@ -521,7 +530,7 @@ export default function IdeaDetailScreen() {
   const handleCollaboratorApply = async (newHtml: string, label: string) => {
     log.debug('Applying AI changes (%s), length: %d', label, newHtml.length);
     // Snapshot current content so the user can always undo this AI edit
-    const currentContent = await editor.getHTML();
+    const currentContent = await getHtmlSafe();
     const cleanCurrent = currentContent === '<p></p>' ? '' : currentContent;
     if (cleanCurrent) {
       const preRev: Revision = {
@@ -809,7 +818,7 @@ export default function IdeaDetailScreen() {
                 title={title}
                 notes={notes}
                 azureConfig={azureConfig}
-                getArticleHtml={() => editor.getHTML()}
+                getArticleHtml={getHtmlSafe}
                 onApplyChanges={handleCollaboratorApply}
               />
             </View>
@@ -834,7 +843,7 @@ export default function IdeaDetailScreen() {
           title={title}
           notes={notes}
           azureConfig={azureConfig}
-          getArticleHtml={() => editor.getHTML()}
+          getArticleHtml={getHtmlSafe}
           onInsertContent={handleInsertContent}
           onReplaceContent={handleCollaboratorApply}
         />

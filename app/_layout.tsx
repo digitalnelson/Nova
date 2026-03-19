@@ -1,9 +1,15 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Colors } from '../src/constants/colors';
+import { runMigrationIfNeeded } from '../src/lib/db';
 
 export default function RootLayout() {
+  useEffect(() => {
+    runMigrationIfNeeded().catch((e) => console.log('[Migration] error:', e));
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
