@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  Modal,
   useWindowDimensions,
   Keyboard,
   KeyboardAvoidingView,
