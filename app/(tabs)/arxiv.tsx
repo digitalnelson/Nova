@@ -10,6 +10,8 @@ import {
   Alert,
   useWindowDimensions,
   RefreshControl,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../src/constants/colors';
 import { ArxivPaper, SavedPaper, ReadingStatus } from '../../src/lib/types';
 import { searchArxiv, ARXIV_CATEGORIES, formatAuthors, formatArxivDate } from '../../src/lib/arxiv';
-import { getSavedPapers, savePaper, deleteSavedPaper } from '../../src/lib/storage';
+import { getSavedPapers, savePaper, deleteSavedPaper, getIgnoredPaperIds, ignorePaper, clearIgnoredPapers } from '../../src/lib/storage';
 
 type ViewMode = 'search' | 'saved';
 
@@ -53,6 +55,63 @@ function CategoryChip({
     >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
+  );
+}
+
+const SWIPE_THRESHOLD = -90;
+
+function SwipeableCard({
+  onSwipeLeft,
+  children,
+}: {
+  onSwipeLeft: () => void;
+  children: React.ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > Math.abs(g.dy) && g.dx < -8,
+      onPanResponderMove: (_, g) => {
+        if (g.dx < 0) translateX.setValue(g.dx);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < SWIPE_THRESHOLD) {
+          Animated.timing(translateX, {
+            toValue: -500,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => onSwipeLeft());
+        } else {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+      },
+    })
+  ).current;
+
+  const bgOpacity = translateX.interpolate({
+    inputRange: [-120, 0],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={styles.swipeWrapper}>
+      <Animated.View style={[styles.swipeBg, { opacity: bgOpacity }]}>
+        <Text style={styles.swipeBgIcon}>👁️</Text>
+        <Text style={styles.swipeBgText}>Reviewed</Text>
+      </Animated.View>
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -120,6 +179,7 @@ export default function ArxivScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set());
   const { width } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
 
@@ -128,10 +188,16 @@ export default function ArxivScreen() {
     setSavedPapers(papers);
   }, []);
 
+  const loadIgnored = useCallback(async () => {
+    const ids = await getIgnoredPaperIds();
+    setIgnoredIds(new Set(ids));
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadSaved();
-    }, [loadSaved])
+      loadIgnored();
+    }, [loadSaved, loadIgnored])
   );
 
   const doSearch = useCallback(async (q: string, cat: string) => {
@@ -211,15 +277,22 @@ export default function ArxivScreen() {
     router.push(`/paper/${encodeURIComponent(paper.id)}`);
   };
 
+  const handleIgnore = useCallback(async (paperId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await ignorePaper(paperId);
+    setIgnoredIds((prev) => new Set([...prev, paperId]));
+  }, []);
+
   const toReadCount = savedPapers.filter((p) => p.status === 'to-read').length;
   const readCount = savedPapers.filter((p) => p.status === 'read').length;
 
   const savedPaperMap = new Map(savedPapers.map((s) => [s.paper.id, s]));
 
-  const displayedPapers: ArxivPaper[] =
+  const displayedPapers: ArxivPaper[] = (
     viewMode === 'saved'
       ? savedPapers.map((s) => s.paper)
-      : searchResults;
+      : searchResults
+  ).filter((p) => !ignoredIds.has(p.id));
 
   const ListHeader = (
     <>
@@ -371,12 +444,14 @@ export default function ArxivScreen() {
         ListHeaderComponent={ListHeader}
         contentContainerStyle={[styles.list, displayedPapers.length === 0 && styles.listEmpty]}
         renderItem={({ item }) => (
-          <PaperCard
-            paper={item}
-            savedPaper={savedPaperMap.get(item.id)}
-            onPress={() => handlePaperPress(item)}
-            onSaveToggle={() => handleSaveToggle(item)}
-          />
+          <SwipeableCard onSwipeLeft={() => handleIgnore(item.id)}>
+            <PaperCard
+              paper={item}
+              savedPaper={savedPaperMap.get(item.id)}
+              onPress={() => handlePaperPress(item)}
+              onSaveToggle={() => handleSaveToggle(item)}
+            />
+          </SwipeableCard>
         )}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
@@ -524,12 +599,34 @@ const styles = StyleSheet.create({
   },
   chipText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
   chipTextActive: { color: '#4A9EEA', fontWeight: '600' },
+  // Swipeable wrapper
+  swipeWrapper: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  swipeBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#E53935',
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: 24,
+    gap: 6,
+  },
+  swipeBgIcon: {
+    fontSize: 20,
+  },
+  swipeBgText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
   // Paper card
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.border,
   },

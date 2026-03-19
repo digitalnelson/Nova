@@ -77,3 +77,24 @@ export async function deleteSavedPaper(paperId: string): Promise<void> {
   const filtered = papers.filter((p) => p.paper.id !== paperId);
   await AsyncStorage.setItem(PAPERS_KEY, JSON.stringify(filtered));
 }
+
+// ─── Ignored / reviewed papers ────────────────────────────────────────────────
+
+const IGNORED_KEY = '@nova/ignored-papers';
+
+export async function getIgnoredPaperIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(IGNORED_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function ignorePaper(paperId: string): Promise<void> {
+  const ids = await getIgnoredPaperIds();
+  if (!ids.includes(paperId)) {
+    ids.push(paperId);
+    await AsyncStorage.setItem(IGNORED_KEY, JSON.stringify(ids));
+  }
+}
+
+export async function clearIgnoredPapers(): Promise<void> {
+  await AsyncStorage.removeItem(IGNORED_KEY);
+}
