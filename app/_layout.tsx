@@ -28,6 +28,10 @@ export default function RootLayout() {
           name="idea/[id]"
           options={{ headerShown: false }}
         />
+        <Stack.Screen
+          name="paper/[arxivId]"
+          options={{ headerShown: false }}
+        />
       </Stack>
     </GestureHandlerRootView>
   );

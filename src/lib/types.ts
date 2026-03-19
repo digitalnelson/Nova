@@ -43,3 +43,29 @@ export interface AppSettings {
 }
 
 export type AIAction = 'outline' | 'titles' | 'tags' | 'intro';
+
+// ─── ArXiv ────────────────────────────────────────────────────────────────────
+
+export interface ArxivPaper {
+  id: string;          // e.g. "2401.12345"
+  title: string;
+  authors: string[];
+  abstract: string;
+  published: string;   // ISO date string
+  updated: string;     // ISO date string
+  categories: string[]; // e.g. ['cs.AI', 'cs.LG']
+  pdfUrl: string;
+  abstractUrl: string;
+}
+
+export type ReadingStatus = 'to-read' | 'reading' | 'read';
+
+export interface SavedPaper {
+  paper: ArxivPaper;
+  status: ReadingStatus;
+  notes: string;
+  savedAt: string;     // ISO date string
+  updatedAt: string;   // ISO date string
+  blogIdeas?: string;  // AI-generated blog ideas
+  clinicalSummary?: string; // AI-generated clinical summary
+}

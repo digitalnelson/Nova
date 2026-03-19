@@ -46,6 +46,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="arxiv"
+        options={{
+          title: 'arXiv',
+          tabBarIcon: ({ color }) => (
+            <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+              <TabSymbol name="papers" color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
@@ -64,6 +75,7 @@ export default function TabsLayout() {
 function TabSymbol({ name, color }: { name: string; color: string }) {
   const icons: Record<string, string> = {
     lightbulb: '💡',
+    papers: '📄',
     gear: '⚙️',
   };
   const { Text } = require('react-native');

@@ -251,6 +251,55 @@ export async function generateHeroImage(
   }
 }
 
+// ─── ArXiv Paper Analysis ─────────────────────────────────────────────────────
+
+export async function summarizePaperForClinicians(
+  config: AzureConfig,
+  title: string,
+  abstract: string,
+  categories: string[]
+): Promise<AIResponse> {
+  const prompt = `You are a board-certified psychiatrist and AI researcher writing for aipsychmd.com, a professional blog about AI and psychiatry for clinicians.
+
+A clinician is reading this academic paper and needs a practical summary.
+
+Paper: "${title}"
+Categories: ${categories.join(', ')}
+Abstract:
+${abstract}
+
+Write a concise 3-paragraph clinical summary:
+1. What the research found (plain language, no jargon)
+2. Clinical implications for mental health practitioners
+3. Limitations, caveats, and questions this raises for practice
+
+Keep it under 250 words. Write for an intelligent clinician, not a researcher.`;
+  return callClaude(config, prompt);
+}
+
+export async function generateBlogIdeasFromPaper(
+  config: AzureConfig,
+  title: string,
+  abstract: string,
+  userNotes: string
+): Promise<AIResponse> {
+  const prompt = `You are a content strategist for aipsychmd.com, a professional blog about AI and psychiatry for clinicians and healthcare technology professionals.
+
+Based on this research paper, generate 3-5 compelling blog post ideas that would engage mental health professionals.
+
+Paper: "${title}"
+Abstract: ${abstract}
+${userNotes ? `Reader's notes: ${userNotes}` : ''}
+
+For each idea provide:
+- A compelling blog post title
+- 2-3 sentence description of the angle and hook
+- Key questions it answers for clinicians
+
+Format as a numbered list. Make each idea concrete, clinically relevant, and ready to write.`;
+  return callClaude(config, prompt);
+}
+
 // ─── AI Collaborator ──────────────────────────────────────────────────────────
 
 export type CollaboratorOperation =
