@@ -71,8 +71,10 @@ function SwipeableCard({
 
   const panResponder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > Math.abs(g.dy) && g.dx < -8,
+        Math.abs(g.dx) > Math.abs(g.dy) * 1.5 && g.dx < -5,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => {
         if (g.dx < 0) translateX.setValue(g.dx);
       },

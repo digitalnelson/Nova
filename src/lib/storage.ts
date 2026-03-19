@@ -1,100 +1,97 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { db } from './db';
 import { ArticleIdea, AppSettings, SavedPaper } from './types';
 
-const IDEAS_KEY = '@nova/ideas';
-const SETTINGS_KEY = '@nova/settings';
+// ─── Article Ideas ─────────────────────────────────────────────────────────────
 
 export async function getIdeas(): Promise<ArticleIdea[]> {
-  const raw = await AsyncStorage.getItem(IDEAS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const rows = await db.getAllAsync<{ data: string }>(
+    'SELECT data FROM ideas ORDER BY created_at DESC'
+  );
+  return rows.map((r) => JSON.parse(r.data));
 }
 
 export async function saveIdea(idea: ArticleIdea): Promise<void> {
-  const ideas = await getIdeas();
-  const idx = ideas.findIndex((i) => i.id === idea.id);
-  if (idx >= 0) {
-    ideas[idx] = idea;
-  } else {
-    ideas.unshift(idea);
-  }
-  await AsyncStorage.setItem(IDEAS_KEY, JSON.stringify(ideas));
+  const json = JSON.stringify(idea);
+  await db.runAsync(
+    'INSERT OR IGNORE INTO ideas (id, data, created_at) VALUES (?, ?, ?)',
+    [idea.id, json, idea.createdAt]
+  );
+  await db.runAsync('UPDATE ideas SET data = ? WHERE id = ?', [json, idea.id]);
 }
 
 export async function deleteIdea(id: string): Promise<void> {
-  const ideas = await getIdeas();
-  const filtered = ideas.filter((i) => i.id !== id);
-  await AsyncStorage.setItem(IDEAS_KEY, JSON.stringify(filtered));
+  await db.runAsync('DELETE FROM ideas WHERE id = ?', [id]);
 }
 
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_SETTINGS: AppSettings = {
+  azureEndpoint: '',
+  azureApiKey: '',
+  azureDeployment: 'claude-opus-4-6',
+  imageEndpoint: '',
+  imageApiKey: '',
+  imageDeployment: 'dall-e-3',
+  wordpressUrl: '',
+  wordpressUsername: '',
+  wordpressAppPassword: '',
+};
+
 export async function getSettings(): Promise<AppSettings> {
-  const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-  return raw
-    ? JSON.parse(raw)
-    : {
-        azureEndpoint: '',
-        azureApiKey: '',
-        azureDeployment: 'claude-opus-4-6',
-        imageEndpoint: '',
-        imageApiKey: '',
-        imageDeployment: 'dall-e-3',
-        wordpressUrl: '',
-        wordpressUsername: '',
-        wordpressAppPassword: '',
-      };
+  const row = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'settings'"
+  );
+  return row ? JSON.parse(row.value) : DEFAULT_SETTINGS;
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  await db.runAsync(
+    "INSERT OR REPLACE INTO settings (key, value) VALUES ('settings', ?)",
+    [JSON.stringify(settings)]
+  );
 }
 
-// ─── ArXiv saved papers ───────────────────────────────────────────────────────
-
-const PAPERS_KEY = '@nova/papers';
+// ─── ArXiv saved papers ────────────────────────────────────────────────────────
 
 export async function getSavedPapers(): Promise<SavedPaper[]> {
-  const raw = await AsyncStorage.getItem(PAPERS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const rows = await db.getAllAsync<{ data: string }>(
+    'SELECT data FROM papers ORDER BY saved_at DESC'
+  );
+  return rows.map((r) => JSON.parse(r.data));
 }
 
 export async function getSavedPaper(paperId: string): Promise<SavedPaper | null> {
-  const papers = await getSavedPapers();
-  return papers.find((p) => p.paper.id === paperId) ?? null;
+  const row = await db.getFirstAsync<{ data: string }>(
+    'SELECT data FROM papers WHERE id = ?',
+    [paperId]
+  );
+  return row ? JSON.parse(row.data) : null;
 }
 
 export async function savePaper(saved: SavedPaper): Promise<void> {
-  const papers = await getSavedPapers();
-  const idx = papers.findIndex((p) => p.paper.id === saved.paper.id);
-  if (idx >= 0) {
-    papers[idx] = saved;
-  } else {
-    papers.unshift(saved);
-  }
-  await AsyncStorage.setItem(PAPERS_KEY, JSON.stringify(papers));
+  const json = JSON.stringify(saved);
+  await db.runAsync(
+    'INSERT OR IGNORE INTO papers (id, data, saved_at) VALUES (?, ?, ?)',
+    [saved.paper.id, json, saved.savedAt]
+  );
+  await db.runAsync('UPDATE papers SET data = ? WHERE id = ?', [json, saved.paper.id]);
 }
 
 export async function deleteSavedPaper(paperId: string): Promise<void> {
-  const papers = await getSavedPapers();
-  const filtered = papers.filter((p) => p.paper.id !== paperId);
-  await AsyncStorage.setItem(PAPERS_KEY, JSON.stringify(filtered));
+  await db.runAsync('DELETE FROM papers WHERE id = ?', [paperId]);
 }
 
 // ─── Ignored / reviewed papers ────────────────────────────────────────────────
 
-const IGNORED_KEY = '@nova/ignored-papers';
-
 export async function getIgnoredPaperIds(): Promise<string[]> {
-  const raw = await AsyncStorage.getItem(IGNORED_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const rows = await db.getAllAsync<{ id: string }>('SELECT id FROM ignored_papers');
+  return rows.map((r) => r.id);
 }
 
 export async function ignorePaper(paperId: string): Promise<void> {
-  const ids = await getIgnoredPaperIds();
-  if (!ids.includes(paperId)) {
-    ids.push(paperId);
-    await AsyncStorage.setItem(IGNORED_KEY, JSON.stringify(ids));
-  }
+  await db.runAsync('INSERT OR IGNORE INTO ignored_papers (id) VALUES (?)', [paperId]);
 }
 
 export async function clearIgnoredPapers(): Promise<void> {
-  await AsyncStorage.removeItem(IGNORED_KEY);
+  await db.runAsync('DELETE FROM ignored_papers');
 }
